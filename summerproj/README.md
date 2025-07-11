@@ -1,5 +1,7 @@
 # VERSION 2 OF CODE
 
+# AQME IS REQUIRED FOR THIS TO WORK PROPERLY
+
 Contains everything I have coded up to now (Version 2).
 
 The code has changed quite a lot.
