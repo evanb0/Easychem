@@ -18,7 +18,6 @@ class ParameterPanel(QWidget):
         # Orca functional and basis set definitions
         self.ORCA_FUNCTIONALS = ["HF", "MP2", "CCSD", "CCSD(T)", "BLYP", "PBE",
             "revPBE", "B3LYP", "MO6L", "MO62X", "B97-3C"
-   
         ]
         
         self.ORCA_BASIS_SETS = [
@@ -78,7 +77,7 @@ class ParameterPanel(QWidget):
         functional_group.setLayout(functional_layout)
         
         # Initialize with default software (Orca)
-        self.on_software_changed("Orca") # Inital state when app is launched will be ORCA.
+        self.on_software_changed("Orca") # Initial state when app is launched will be ORCA.
         
         # Processor count selection
         processor_group = QGroupBox("Computational Resources")
@@ -101,6 +100,8 @@ class ParameterPanel(QWidget):
         processor_group.setLayout(processor_layout)
 
         #Memory 
+        #// We have to consider here that Orca's memory is per core, e.g. nrpocs = 4, memory = 1000 then 4000MB is allocated
+        # Gaussian does it all at once so if we specify 16GB then it will allocate 16GB to the job\\
         memory_group = QGroupBox("Memory")
         memory_group.setStyleSheet('font-weight: bold')
         memory_layout = QVBoxLayout()
@@ -154,6 +155,9 @@ class ParameterPanel(QWidget):
         calc_layout.addLayout(calc_row)
         
         # Additional options -> IDK WHAT OTHER PARAMATERS WOULD BE USED, NEED TO DISCUSS WITH JULIA
+        # // might be useful to have a tickbox for wanting to change charge/mult rather than changing it to 0 1 automatically (which is what it does from what i understand in filepanel.py \\
+        # // at some point we might also consider advanced calcs/compound scripts/etc but that will require reading up on how the software works \\
+        # // for the QPREP parameters the kind of things i was thinking of were options like selecting top 10 lowest E confs, or certain energy thresholds, etc. \\
         
         charge_spin_row = QHBoxLayout()
         charge_spin_row.addWidget(QLabel("Charge:"))

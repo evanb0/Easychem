@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt
 
 # NOTE: THIS WILL BE SKIPPED FOR NOW IDFK HOW TO DO THIS WILL COME BACK TO (VERY) LATER (EMPHASIS ON VERY)
 # As of version 2 this has still not been changed at all.
+# // Super valid. I think once we get all the keyword options down we can focus on this. \\
 
 class MolecularViewer(QFrame):
     """Molecular viewer placeholder widget

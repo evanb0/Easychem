@@ -102,5 +102,6 @@ def main():
 
 # I didn't see this in the book anywhere, But I think this is a safer way to run GUI apps.
 # Although I don't fully understand it, I think it's to make sure our app runs properly (if we were to upload it to be installed by others)
+# // You can also just combine the main() function with the if __name__ == "__main__": block, I truly am not expert but if it works it works \\
 if __name__ == "__main__":
     main()  
