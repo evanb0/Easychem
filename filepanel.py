@@ -124,20 +124,24 @@ class FilePanel(QWidget):
 
     def update_button_color(self):
         style = "font-size: 12px; font-weight: bold; background-color: #4287f5; color: white;"
+        slurm_style = "font-size: 10px; font-weight: bold; background-color: #4287f5; color: white;"
         if self.model:
             try:
                 software = self.model.software().lower()
                 if software == 'gaussian':
                     style = "font-size: 12px; font-weight: bold; background-color: #f54242; color: white;"
+                    slurm_style = "font-size: 10px; font-weight: bold; background-color: #f54242; color: white;"
             except Exception:
                 pass
         self.preview_btn.setStyleSheet(style)
         self.make_btn.setStyleSheet(style)
+        self.slurm_btn.setStyleSheet(slurm_style)
 
     def preview_input(self):
         params = self.collect_input_params()
         if not params['input_file']:
             self.status_text.setPlainText("Error: No input file selected. Please select a file first.")
+            self.preview_btn.setEnabled(True)
             return
         try:
             if params['software'].lower() == 'orca':
@@ -149,6 +153,7 @@ class FilePanel(QWidget):
             self.status_text.setPlainText(f"=== INPUT FILE PREVIEW ===\n\n{preview_content}\n\n{'='*50}\n\nThis is a preview of the input file that will be generated.\nClick 'Make Input Files' to create the actual files.")
         except Exception as e:
             self.status_text.setPlainText(f"Error generating preview: {str(e)}")
+        self.preview_btn.setEnabled(True)
 
     def generate_orca_preview(self, params):
         calc_line = f"! {params['functional']} {params['basis']}"
@@ -227,8 +232,21 @@ class FilePanel(QWidget):
         output_dir = self.output_dir_edit.text().strip()
         params['input_file'] = input_file
         params['output_dir'] = output_dir
-        params['charge'] = 0
-        params['multiplicity'] = 1
+        
+        # Get charge and multiplicity from parameter_panel
+        if self.parameter_panel:
+            try:
+                params['charge'] = int(self.parameter_panel.get_current_charge())
+            except Exception:
+                params['charge'] = 0
+            try:
+                params['multiplicity'] = int(self.parameter_panel.get_current_multiplicity())
+            except Exception:
+                params['multiplicity'] = 1
+        else:
+            params['charge'] = 0
+            params['multiplicity'] = 1
+            
         if self.parameter_panel:
             params['job_type'] = self.parameter_panel.get_current_job_type()
             params['solvent_model'] = self.parameter_panel.get_current_solvent_model()
@@ -240,13 +258,16 @@ class FilePanel(QWidget):
         if params['solvent_model'] != 'None' and params['solvent'] != 'None':
             solvent_blocks = {
                 'orca': {
-                    'PCM': f"CPCM({params['solvent']})",
+                    'CPCM': f"CPCM({params['solvent']})",
                     'SMD': f"SMD({params['solvent']})",
-                    'COSMO': f"ddCOSMO({params['solvent']})"
+                    'COSMORS': f"COSMORS({params['solvent']})",
+                    'DRACO': f"CPCM({params['solvent']}) DRACO",
                 },
                 'gaussian': {
                     'PCM': f"SCRF=(PCM,Solvent={params['solvent']})",
                     'SMD': f"SCRF=(SMD,Solvent={params['solvent']})",
+                    'IEFPCM': f"SCRF=(IEFPCM,Solvent={params['solvent']})",
+                    'CPCM': f"SCRF=(CPCM,Solvent={params['solvent']})",
                 }
             }
             params["solvent_block"] = solvent_blocks.get(params['software'], {}).get(params['solvent_model'], '')
@@ -323,25 +344,53 @@ class FilePanel(QWidget):
         params = self.collect_input_params()
         input_file = params.get('input_file', '').strip()
         nprocs = params.get('nprocs', 1)
+        software = params.get('software', 'orca').lower()
         if not input_file or not os.path.isfile(input_file):
             self.status_text.setPlainText("Error: No valid input file selected for SLURM script generation.")
             return
         input_basename = os.path.basename(input_file)
-        inp_basename = os.path.splitext(input_basename)[0] + '.inp'
-        # The following is the example of a SLURM imput for ORCA. This will not work for GAUSSIAN yet but I imagine the same thing can be used.
-        script_content = f'''#!/bin/bash --login
+        base_name = os.path.splitext(input_basename)[0]
+        output_dir = params.get('output_dir', '').strip()
+        if output_dir:
+            script_dir = output_dir
+        else:
+            script_dir = os.path.dirname(input_file)
+        if software == 'gaussian':
+            script_filename = "submitgaussian.txt"
+        else:
+            script_filename = "submitorca.txt"
+        script_path = os.path.join(script_dir, script_filename)
+        if software == 'gaussian':
+            inp_basename = base_name + '.inp'
+            out_basename = base_name + '.inp'
+            script_content = f'''#!/bin/bash --login
+#SBATCH -p multicore # (or --partition) Single-node multicore
+#SBATCH -n {nprocs} # (or --ntasks=) Number of cores (2--40)
+#SBATCH -t 4-0
+# Load g16 for the CPU type our job is running on
+module load gaussian/g16c01_em64t_detectcpu
+## Set up scratch dir (please do this!)
+export GAUSS_SCRDIR=/scratch/$USER/gau_temp_$SLURM_JOB_ID
+mkdir -p $GAUSS_SCRDIR
+## Say how much memory to use (4GB per core)
+export GAUSS_MDEF=$((SLURM_NTASKS*4))GB
+## Inform Gaussian how many cores to use
+export GAUSS_PDEF=$SLURM_NTASKS
+$g16root/g16/g16 < {inp_basename} > {out_basename}
+'''
+        else:
+            inp_basename = base_name + '.inp'
+            script_content = f'''#!/bin/bash --login
 
 #SBATCH -p multicore    # (or --partition=) Submit to the AMD Genoa nodes
 #SBATCH -n {nprocs}            # (or --ntasks=) Number of cores (2--168). Must match the number in your ORCA input file!
 #SBATCH -t 4-0          # Wallclock timelimit (4-0 is 4 days, max permitted is 7-0)
 
 module purge
-module load apps/binapps/orca/6.0.1-avx2 
+module load apps/binapps/orca/6.0.1-avx2
 
 $ORCA_HOME/orca {inp_basename}  > results.${{SLURM_JOB_ID}}.txt
 '''
-        script_dir = os.path.dirname(input_file)
-        script_path = os.path.join(script_dir, "submitorca.txt")
         try:
             with open(script_path, 'w') as f:
                 f.write(script_content)

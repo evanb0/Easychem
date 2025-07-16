@@ -76,9 +76,6 @@ class ParameterPanel(QWidget):
         
         functional_group.setLayout(functional_layout)
         
-        # Initialize with default software (Orca)
-        self.on_software_changed("Orca") # Initial state when app is launched will be ORCA.
-        
         # Processor count selection
         processor_group = QGroupBox("Computational Resources")
         processor_group.setStyleSheet('font-weight: bold')
@@ -126,21 +123,34 @@ class ParameterPanel(QWidget):
         solvation_group.setStyleSheet('font-weight: bold')
         solvation_layout = QVBoxLayout()
         
+        # Solvent models and solvents for each software
+        self.ORCA_SOLVENT_MODELS = ["None", "CPCM", "SMD", "COSMORS", "DRACO"]
+        self.ORCA_SOLVENTS = [
+            "None", "Water", "Methanol", "Ethanol", "Acetone", "DMSO", 'Toluene', 'Aniline', 'Benzene', 'Chloroform', 'Carbon Disulfide', 'DCM', 'diethyl ether', 'DMF', 'Ethyl Acetate', 'Nitromethane', 'THF',
+        ]
+        self.GAUSSIAN_SOLVENT_MODELS = ["None", "PCM", "SMD", "IEFPCM", "CPCM"]
+        self.GAUSSIAN_SOLVENTS = [
+            "None", "Water", "Methanol", "Ethanol", "Acetone", "DMSO", "Benzene", "Chloroform", "Toluene", "Acetonitrile", "Dichloromethane", "DiethylEther", "Hexane", "Heptane", "Octanol", "THF", "DMF", "Ethyl Acetate", "Nitromethane"
+        ]
+
         solv_row = QHBoxLayout()
         solv_row.addWidget(QLabel("Solvent Model"))
         self.solvation_combo = QComboBox()
-        self.solvation_combo.addItems(["None", "PCM", "SMD", "COSMO"])
+        self.solvation_combo.addItems(self.ORCA_SOLVENT_MODELS)
         solv_row.addWidget(self.solvation_combo)
         solvation_layout.addLayout(solv_row)
         
         solvent_row = QHBoxLayout()
         solvent_row.addWidget(QLabel("Solvent"))
         self.solvent_combo = QComboBox()
-        self.solvent_combo.addItems(["None", "Water", "Methanol", "Ethanol", "Acetone", "DMSO"])
+        self.solvent_combo.addItems(self.ORCA_SOLVENTS)
         solvent_row.addWidget(self.solvent_combo)
         solvation_layout.addLayout(solvent_row)
         
         solvation_group.setLayout(solvation_layout)
+
+        # Initialize with default software (Orca)
+        self.on_software_changed("Orca") # Initial state when app is launched will be ORCA.
         
         # Calculation type -> What do you want to calculate? OPT/FRQS ETC.
         calc_group = QGroupBox("Calculation Type")
@@ -150,14 +160,14 @@ class ParameterPanel(QWidget):
         calc_row = QHBoxLayout()
         calc_row.addWidget(QLabel("Job Type:"))
         self.calc_combo = QComboBox()
-        self.calc_combo.addItems(["Single Point", "Geometry Optimization", "Frequency", "TD-DFT"])
+        self.calc_combo.addItems(["Single Point", "Geometry Optimization", "Frequency", "TD-DFT", "Opt+Freq"])
         calc_row.addWidget(self.calc_combo)
         calc_layout.addLayout(calc_row)
         
         # Additional options -> IDK WHAT OTHER PARAMATERS WOULD BE USED, NEED TO DISCUSS WITH JULIA
-        # // might be useful to have a tickbox for wanting to change charge/mult rather than changing it to 0 1 automatically (which is what it does from what i understand in filepanel.py \\
+        # // might be useful to have a tickbox for wanting to change charge/mult rather than changing it to 0 1 automatically (which is what it does from what i understand in filepanel.py \\ DONE
         # // at some point we might also consider advanced calcs/compound scripts/etc but that will require reading up on how the software works \\
-        # // for the QPREP parameters the kind of things i was thinking of were options like selecting top 10 lowest E confs, or certain energy thresholds, etc. \\
+        # // for the QPREP parameters the kind of things i was thinking of were options like selecting top 10 lowest E confs, or certain energy thresholds, etc. \\ 
         
         charge_spin_row = QHBoxLayout()
         charge_spin_row.addWidget(QLabel("Charge:"))
@@ -198,12 +208,22 @@ class ParameterPanel(QWidget):
             # Add Orca functionals and basis sets
             self.functional_combo.addItems(self.ORCA_FUNCTIONALS)
             self.basis_combo.addItems(self.ORCA_BASIS_SETS)
+            # Update solvent model and solvent dropdowns for ORCA
+            self.solvation_combo.clear()
+            self.solvation_combo.addItems(self.ORCA_SOLVENT_MODELS)
+            self.solvent_combo.clear()
+            self.solvent_combo.addItems(self.ORCA_SOLVENTS)
             # Set background color to ORCA colour
             self.setStyleSheet("background-color: #4287f5; color: white;")
         elif software_name == "Gaussian":
             # Add Gaussian functionals and basis sets
             self.functional_combo.addItems(self.GAUSSIAN_FUNCTIONALS)
             self.basis_combo.addItems(self.GAUSSIAN_BASIS_SETS)
+            # Update solvent model and solvent dropdowns for GAUSSIAN
+            self.solvation_combo.clear()
+            self.solvation_combo.addItems(self.GAUSSIAN_SOLVENT_MODELS)
+            self.solvent_combo.clear()
+            self.solvent_combo.addItems(self.GAUSSIAN_SOLVENTS)
             # Set background color to Gaussian colour
             self.setStyleSheet("background-color: #eb361e;")
 
@@ -242,5 +262,13 @@ class ParameterPanel(QWidget):
         return self.solvation_combo.currentText()
 
     def get_current_solvent(self):
-        """Get the current solvent selection (e.g., Water, Methanol, etc.)"""
-        return self.solvent_combo.currentText()
+        """Get the current solvent selection (e.g., Water, Methanol, etc.)""" # This currently contains every solvent that would work within each of the solvent models.
+        return self.solvent_combo.currentText() # Additional solvents will have to be added manually.
+
+    def get_current_charge(self):
+        """Get the current charge selection"""
+        return self.charge_spin.value()
+
+    def get_current_multiplicity(self):
+        """Get the current multiplicity selection"""
+        return self.multiplicity_spin.value()
