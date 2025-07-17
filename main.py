@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QGroupBox, QCheckBox, QSpinBox, QTabWidget)
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
-from molecularviewer import MolecularViewer 
+from molecularviewer import MoleculeViewer
 from parameterpanel import ParameterPanel 
 from filepanel import FilePanel   
 
@@ -30,11 +30,11 @@ class EasyChemMainWindow(QMainWindow):
         
         # Right panel - Molecular viewer
         right_panel = QVBoxLayout()
-        viewer_label = QLabel("Molecular Structure")
+        viewer_label = QLabel("Molecular Analysis")
         viewer_label.setAlignment(Qt.AlignCenter)
-        viewer_label.setStyleSheet("font-size: 16px; font-weight: bold; margin: 5px;")
+        viewer_label.setStyleSheet("font-size: 20px; font-weight: bold; margin: 5px; font-color;")
         
-        self.molecular_viewer = MolecularViewer()
+        self.molecular_viewer = MoleculeViewer()
         
         right_panel.addWidget(viewer_label)
         right_panel.addWidget(self.molecular_viewer)
@@ -65,8 +65,8 @@ class EasyChemMainWindow(QMainWindow):
         
         # Add panels to main layout
         main_layout.addLayout(left_panel, 2)  
-        main_layout.addLayout(middle_panel, 2)  
-        main_layout.addLayout(right_panel, 1)  
+        main_layout.addLayout(middle_panel, 1)  
+        main_layout.addLayout(right_panel, 2)  
         
         central_widget.setLayout(main_layout)
 

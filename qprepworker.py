@@ -1,7 +1,3 @@
-# Displays a message if the file is submitted successfully, and also displays an error if not.
-# IF NO DIRECTORY IS SPECIFIED, IT WILL EXPORT FILES TO THE QCALC DIRECTORY, HOWEVER IF A DIRECTORY IS SPECIFIED, IT WILL GO THERE
-# However, since you set it up as a QCALC directory being made anyway, maybe worth getting rid of choice for output directory and just have it always export here?
-
 from PySide6.QtCore import  Signal, QObject, Slot
 from aqme.qprep import qprep # //i think this was giving some grief when it was imported in run so i moved it here and the memory allocation error ceased for now\\
 
