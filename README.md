@@ -1,9 +1,9 @@
 # summerproj
 
 
-# 17th July
+# 17th + 18th July
 
-Main changes today were adding some sort of molecularviewer. This was mainly done in RDKIT, but detailed comments are within the file so I wont add much here.
+Main changes were adding some code to the Molecularviewer.py file. This was mainly done in RDKIT, but detailed comments are within the file so I wont add much here.
 
 
 
