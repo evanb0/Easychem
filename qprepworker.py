@@ -1,5 +1,5 @@
 from PySide6.QtCore import  Signal, QObject, Slot
-from aqme.qprep import qprep # //i think this was giving some grief when it was imported in run so i moved it here and the memory allocation error ceased for now\\
+from aqme.qprep import qprep 
 
 
 class QPrepWorker(QObject):
@@ -11,7 +11,6 @@ class QPrepWorker(QObject):
         self.params = params
 
 
-    # Changed your code slightly, it now works for import/export anywhere but if QREP isnt meant to work like this then can prob just revert.
     @Slot()
     def run(self):
         try:
