@@ -283,7 +283,6 @@ class MoleculeViewer(QWidget):
         """
         Generates 3D conformers for a given SMILES string and calculates their energies.
         Uses RDKit's EmbedMultipleConfs for conformer generation and MMFF/UFF for energy calculation.
-        IDK How accurate this is tbh, Probably worth you testing to see if it is good
         """
         mol = Chem.MolFromSmiles(smiles)
         if not mol:
