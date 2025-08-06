@@ -67,7 +67,7 @@ class EasyChemMainWindow(QMainWindow):
 
         # Add the three top panels to the top horizontal layout
         top_h_layout.addLayout(left_panel, 1)  
-        top_h_layout.addLayout(middle_panel, )
+        top_h_layout.addLayout(middle_panel, 1)
         top_h_layout.addLayout(right_panel, 1) 
         
         # Add the top panels and the 3D viewer to the main vertical layout
