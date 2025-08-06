@@ -1,9 +1,9 @@
 # summerproj
 
-Currently working on an issue where although the window view opens for the molecule, the molecule itself does not actually show. This seems to only be an issue on WINDOWS, this does not occur on mac.
-
-Not too many updates have been added, but fixed a few issues:
-- Molecular viewer now only opens once, rather than the bug where it was opening twice
-- The most stable conformer is showed first, however stil a dropdown option of 10 for others to be checked
-- I added some sort of axis system (this is not really clean, but I thought it can be used to see if a molecule is planar/symmetric etc)
-- Tidied up the UI a little bit.
+Completely removed SMILES FUNCTIONALITY where initially we made new conformers from a file.
+- When a .sdf file is inserted, a 3D Molecular viewer opens at the bottom of the screen, allowing each molecule within that file to be selected and viewed accordingly.
+- Option to export 10 lowest energy molecules within the file (this does work for the 6k molecule file I tried it, although it does make the app freeze)
+- Changed the UI a little bit (added a zoom button to 3D viewer, changed colour scheme)
+- Currently the molecular viewer stuff only works for .sdf files, a lil buggy with .xyz so haven't implemented it yet
+- All other features haven't really been touched.
+  
