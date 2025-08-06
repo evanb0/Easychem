@@ -15,7 +15,6 @@ class ParameterPanel(QWidget):
     
     def setup_software_data(self):
         """Define software-specific functionals and basis sets"""
-        # Orca functional and basis set definitions
         self.ORCA_FUNCTIONALS = ["HF", "MP2", "CCSD", "CCSD(T)", "BLYP", "PBE",
             "revPBE", "B3LYP", "MO6L", "MO62X", "B97-3C"
         ]
@@ -27,7 +26,6 @@ class ParameterPanel(QWidget):
             'ma-def2-TZVP', 'ma-def2-QZVP',
         ]
         
-        # Gaussian functional and basis set definitions
         self.GAUSSIAN_FUNCTIONALS =['APFD', 'B3LYP', 'BPV86', 'B3PW91', 'CAM-B3LYP', 'HCTH', 'HSEH1PBE', 'LSDA', 'MPW1PW91', 'PBEPBE', 'TPSSTPSS', 'WB97XD']
         
         self.GAUSSIAN_BASIS_SETS = [
@@ -44,10 +42,10 @@ class ParameterPanel(QWidget):
         
         # Software selection
         software_group = QGroupBox("Software")
-        software_group.setStyleSheet("font-weight: bold")
         software_layout = QHBoxLayout()
         
         self.software_combo = QComboBox()
+        self.software_combo.setStyleSheet("QComboBox { background-color: #edf2f4; color: #2b2d42; border: 1px solid #8d99ae; border-radius: 3px; padding: 2px; }")
         self.software_combo.addItems(["Orca", "Gaussian"]) 
         self.software_combo.currentTextChanged.connect(self.on_software_changed)
         self.software_combo.currentTextChanged.connect(self.model.setSoftware)
@@ -55,14 +53,14 @@ class ParameterPanel(QWidget):
         software_layout.addWidget(self.software_combo)
         software_group.setLayout(software_layout)
         
-        # Functional selection - Selection for our Functions/Basis sets
+        # Functional selection
         functional_group = QGroupBox("Method")
-        functional_group.setStyleSheet("font-weight: bold")
         functional_layout = QVBoxLayout()
         
         func_row = QHBoxLayout()
         func_row.addWidget(QLabel("Functional"))
         self.functional_combo = QComboBox()
+        self.functional_combo.setStyleSheet("QComboBox { background-color: #edf2f4; color: #2b2d42; border: 1px solid #8d99ae; border-radius: 3px; padding: 2px; }")
         self.functional_combo.currentTextChanged.connect(self.model.setFunctional)
         func_row.addWidget(self.functional_combo)
         functional_layout.addLayout(func_row)
@@ -70,6 +68,7 @@ class ParameterPanel(QWidget):
         basis_row = QHBoxLayout()
         basis_row.addWidget(QLabel("Basis Set"))
         self.basis_combo = QComboBox()
+        self.basis_combo.setStyleSheet("QComboBox { background-color: #edf2f4; color: #2b2d42; border: 1px solid #8d99ae; border-radius: 3px; padding: 2px; }")
         self.basis_combo.currentTextChanged.connect(self.model.setBasisSet)
         basis_row.addWidget(self.basis_combo)
         functional_layout.addLayout(basis_row)
@@ -78,7 +77,6 @@ class ParameterPanel(QWidget):
         
         # Processor count selection
         processor_group = QGroupBox("Computational Resources")
-        processor_group.setStyleSheet('font-weight: bold')
         processor_layout = QVBoxLayout()
         
         proc_row = QHBoxLayout()
@@ -98,7 +96,6 @@ class ParameterPanel(QWidget):
 
         #Memory 
         memory_group = QGroupBox("Memory")
-        memory_group.setStyleSheet('font-weight: bold')
         memory_layout = QVBoxLayout()
 
         mem_row = QHBoxLayout()
@@ -118,10 +115,8 @@ class ParameterPanel(QWidget):
         
         # Solvation model
         solvation_group = QGroupBox("Solvation")
-        solvation_group.setStyleSheet('font-weight: bold')
         solvation_layout = QVBoxLayout()
         
-        # Solvent models and solvents for each software
         self.ORCA_SOLVENT_MODELS = ["None", "CPCM", "SMD", "COSMORS", "DRACO"]
         self.ORCA_SOLVENTS = [
             "None", "Water", "Methanol", "Ethanol", "Acetone", "DMSO", 'Toluene', 'Aniline', 'Benzene', 'Chloroform', 'Carbon Disulfide', 'DCM', 'diethyl ether', 'DMF', 'Ethyl Acetate', 'Nitromethane', 'THF',
@@ -134,6 +129,7 @@ class ParameterPanel(QWidget):
         solv_row = QHBoxLayout()
         solv_row.addWidget(QLabel("Solvent Model"))
         self.solvation_combo = QComboBox()
+        self.solvation_combo.setStyleSheet("QComboBox { background-color: #edf2f4; color: #2b2d42; border: 1px solid #8d99ae; border-radius: 3px; padding: 2px; }")
         self.solvation_combo.addItems(self.ORCA_SOLVENT_MODELS)
         solv_row.addWidget(self.solvation_combo)
         solvation_layout.addLayout(solv_row)
@@ -141,6 +137,7 @@ class ParameterPanel(QWidget):
         solvent_row = QHBoxLayout()
         solvent_row.addWidget(QLabel("Solvent"))
         self.solvent_combo = QComboBox()
+        self.solvent_combo.setStyleSheet("QComboBox { background-color: #edf2f4; color: #2b2d42; border: 1px solid #8d99ae; border-radius: 3px; padding: 2px; }")
         self.solvent_combo.addItems(self.ORCA_SOLVENTS)
         solvent_row.addWidget(self.solvent_combo)
         solvation_layout.addLayout(solvent_row)
@@ -148,16 +145,16 @@ class ParameterPanel(QWidget):
         solvation_group.setLayout(solvation_layout)
 
         # Initialize with default software (Orca)
-        self.on_software_changed("Orca") # Initial state when app is launched will be ORCA.
+        self.on_software_changed("Orca")
         
-        # Calculation type -> What do you want to calculate? OPT/FRQS ETC.
+        # Calculation type
         calc_group = QGroupBox("Calculation Type")
-        calc_group.setStyleSheet('font-weight: bold')
         calc_layout = QVBoxLayout()
         
         calc_row = QHBoxLayout()
         calc_row.addWidget(QLabel("Job Type:"))
         self.calc_combo = QComboBox()
+        self.calc_combo.setStyleSheet("QComboBox { background-color: #edf2f4; color: #2b2d42; border: 1px solid #8d99ae; border-radius: 3px; padding: 2px; }")
         self.calc_combo.addItems(["Single Point", "Geometry Optimization", "Frequency", "TD-DFT", "Opt+Freq"])
         calc_row.addWidget(self.calc_combo)
         calc_layout.addLayout(calc_row)
@@ -165,12 +162,14 @@ class ParameterPanel(QWidget):
         charge_spin_row = QHBoxLayout()
         charge_spin_row.addWidget(QLabel("Charge:"))
         self.charge_spin = QSpinBox()
+        self.charge_spin.setStyleSheet("QSpinBox { background-color: #edf2f4; color: #2b2d42; border: 1px solid #8d99ae; border-radius: 3px; padding: 2px; }")
         self.charge_spin.setRange(-10, 10)
         self.charge_spin.setValue(0)
         charge_spin_row.addWidget(self.charge_spin)
         
         charge_spin_row.addWidget(QLabel("Multiplicity:"))
         self.multiplicity_spin = QSpinBox()
+        self.multiplicity_spin.setStyleSheet("QSpinBox { background-color: #edf2f4; color: #2b2d42; border: 1px solid #8d99ae; border-radius: 3px; padding: 2px; }")
         self.multiplicity_spin.setRange(1, 10)
         self.multiplicity_spin.setValue(1)
         charge_spin_row.addWidget(self.multiplicity_spin)
@@ -178,7 +177,6 @@ class ParameterPanel(QWidget):
         
         calc_group.setLayout(calc_layout)
         
-        # Add all groups to main layout
         layout.addWidget(software_group)
         layout.addWidget(functional_group)
         layout.addWidget(processor_group)
@@ -190,78 +188,56 @@ class ParameterPanel(QWidget):
         self.setLayout(layout)
     
     def on_software_changed(self, software_name):
-        """Update functional and basis set options based on selected software"""
-        # Clear existing items
         self.functional_combo.clear()
         self.basis_combo.clear()
         
-        # Purpose of this is to ensure you are not trying to run an ORCA basis set within
-        # A gaussian input file, we want our inputs to actually work when complete!
         if software_name == "Orca":
-            # Add Orca functionals and basis sets
             self.functional_combo.addItems(self.ORCA_FUNCTIONALS)
             self.basis_combo.addItems(self.ORCA_BASIS_SETS)
-            # Update solvent model and solvent dropdowns for ORCA
             self.solvation_combo.clear()
             self.solvation_combo.addItems(self.ORCA_SOLVENT_MODELS)
             self.solvent_combo.clear()
             self.solvent_combo.addItems(self.ORCA_SOLVENTS)
-            # Set background color to ORCA colour
-            self.setStyleSheet("background-color: #4287f5; color: white;")
         elif software_name == "Gaussian":
-            # Add Gaussian functionals and basis sets
             self.functional_combo.addItems(self.GAUSSIAN_FUNCTIONALS)
             self.basis_combo.addItems(self.GAUSSIAN_BASIS_SETS)
-            # Update solvent model and solvent dropdowns for GAUSSIAN
             self.solvation_combo.clear()
             self.solvation_combo.addItems(self.GAUSSIAN_SOLVENT_MODELS)
             self.solvent_combo.clear()
             self.solvent_combo.addItems(self.GAUSSIAN_SOLVENTS)
-            # Set background color to Gaussian colour
-            self.setStyleSheet("background-color: #eb361e;")
-
-        
-
+            
     def on_nprocs_changed(self, value):
-        """Update the processor count label when slider changes"""
         self.nprocs_label.setText(str(value))
-    
-    def get_current_functional(self):
-        """Get the current functional selection"""
-        return self.functional_combo.currentText() # Returns current selection 
-    
-    def get_current_basis_set(self):
-        """Get the current basis set selection"""
-        return self.basis_combo.currentText() # Returns current selection of basis set.
-    
-    def get_current_nprocs(self):
-        """Get the current processor count selection"""
-        return self.nprocs_slider.value() # Returns current processor count
-    
+        
     def on_mem_changed(self, value):
-        """Update Memory when slider changes"""
         self.mem_label.setText(str(value))
 
+    def get_current_software(self):
+        return self.software_combo.currentText()
+
+    def get_current_functional(self):
+        return self.functional_combo.currentText()
+
+    def get_current_basis_set(self):
+        return self.basis_combo.currentText()
+    
+    def get_current_nprocs(self):
+        return self.nprocs_slider.value()
+    
     def get_current_mem(self):
-        """Get Current Memory allocation"""
         return self.mem_slider.value()
 
     def get_current_job_type(self):
-        """Get the current job type selection (e.g., Opt, Freq, etc.)"""
         return self.calc_combo.currentText()
 
     def get_current_solvent_model(self):
-        """Get the current solvent model selection (e.g., None, PCM, SMD, COSMO)"""
         return self.solvation_combo.currentText()
 
     def get_current_solvent(self):
-        """Get the current solvent selection (e.g., Water, Methanol, etc.)""" # This currently contains every solvent that would work within each of the solvent models.
-        return self.solvent_combo.currentText() # Additional solvents will have to be added manually.
+        return self.solvent_combo.currentText()
 
     def get_current_charge(self):
-        """Get the current charge selection"""
         return self.charge_spin.value()
 
     def get_current_multiplicity(self):
-        """Get the current multiplicity selection"""
         return self.multiplicity_spin.value()

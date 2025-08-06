@@ -14,13 +14,20 @@ FILE_FILTERS = [
 
 class FilePanel(QWidget):
     """Panel to manage input file selection, output directory, and generate input scripts."""
+    
+    # Signal to notify when a new file is selected
+    fileSelected = Signal(str)
 
-    def __init__(self, model=None, parameter_panel=None):
+    def __init__(self, model=None, parameter_panel=None, molecular_viewer=None):
         super().__init__()
         self.model = model
         self.parameter_panel = parameter_panel
+        self.molecular_viewer = molecular_viewer
         self.setup_ui()
         self.connect_model_signals()
+        
+        if self.molecular_viewer:
+            self.fileSelected.connect(self.molecular_viewer.load_molecules_from_file)
 
     def setup_ui(self):
         layout = QVBoxLayout()
@@ -32,22 +39,22 @@ class FilePanel(QWidget):
         input_row.addWidget(QLabel("File"))
         self.input_file_edit = QLineEdit()
         self.input_file_edit.setPlaceholderText("Select File")
+        self.input_file_edit.setStyleSheet("QLineEdit { background-color: #edf2f4; color: #2b2d42; border: 1px solid #8d99ae; border-radius: 3px; padding: 5px; }")
         input_row.addWidget(self.input_file_edit)
         self.browse_input_btn = QPushButton("Browse")
         self.browse_input_btn.clicked.connect(self.get_filename)
         input_row.addWidget(self.browse_input_btn)
         input_layout.addLayout(input_row)
         input_group.setLayout(input_layout)
-        input_group.setStyleSheet("font-weight: bold;")
 
         # Output Directory Section
         output_group = QGroupBox("Output")
         output_layout = QVBoxLayout()
-        output_group.setStyleSheet("font-weight: bold;")
         output_row = QHBoxLayout()
         output_row.addWidget(QLabel("Output Directory"))
         self.output_dir_edit = QLineEdit()
         self.output_dir_edit.setPlaceholderText("Select output directory")
+        self.output_dir_edit.setStyleSheet("QLineEdit { background-color: #edf2f4; color: #2b2d42; border: 1px solid #8d99ae; border-radius: 3px; padding: 5px; }")
         output_row.addWidget(self.output_dir_edit)
         self.browse_output_btn = QPushButton("Browse")
         self.browse_output_btn.clicked.connect(self.get_output_directory)
@@ -58,18 +65,15 @@ class FilePanel(QWidget):
         # Buttons
         self.make_btn = QPushButton("Make Input Files")
         self.make_btn.setMinimumHeight(40)
-        self.make_btn.setStyleSheet("font-size: 12px; font-weight: bold; background-color: #4287f5; color: white;")
         self.make_btn.clicked.connect(self.run_qprep)
         self.preview_btn = QPushButton("Preview Input")
         self.preview_btn.setMinimumHeight(30)
-        self.preview_btn.setStyleSheet("font-size: 12px; font-weight: bold; background-color: #4287f5; color: white;")
         self.preview_btn.clicked.connect(self.preview_input)
         button_layout = QHBoxLayout()
         button_layout.addWidget(self.preview_btn)
         button_layout.addWidget(self.make_btn)
         self.slurm_btn = QPushButton("SLURM")
         self.slurm_btn.setMinimumHeight(30)
-        self.slurm_btn.setStyleSheet("font-size: 10px; font-weight: bold; background-color: #f5b942; color: black;")
         self.slurm_btn.clicked.connect(self.generate_slurm_script)
         button_layout.addWidget(self.slurm_btn)
 
@@ -77,6 +81,7 @@ class FilePanel(QWidget):
         status_group = QGroupBox("Status / Preview")
         status_layout = QVBoxLayout()
         self.status_text = QTextEdit()
+        self.status_text.setStyleSheet("QTextEdit { background-color: #edf2f4; color: #2b2d42; border: 1px solid #8d99ae; border-radius: 3px; padding: 5px; }")
         self.status_text.setMaximumHeight(200)
         self.status_text.setPlaceholderText("Ready to create input files")
         self.status_text.setReadOnly(True)
@@ -123,16 +128,9 @@ class FilePanel(QWidget):
                 self.update_button_color()
 
     def update_button_color(self):
-        style = "font-size: 12px; font-weight: bold; background-color: #4287f5; color: white;"
-        slurm_style = "font-size: 10px; font-weight: bold; background-color: #4287f5; color: white;"
-        if self.model:
-            try:
-                software = self.model.software().lower()
-                if software == 'gaussian':
-                    style = "font-size: 12px; font-weight: bold; background-color: #f54242; color: white;"
-                    slurm_style = "font-size: 10px; font-weight: bold; background-color: #f54242; color: white;"
-            except Exception:
-                pass
+        style = ""
+        slurm_style = ""
+        
         self.preview_btn.setStyleSheet(style)
         self.make_btn.setStyleSheet(style)
         self.slurm_btn.setStyleSheet(slurm_style)
@@ -233,7 +231,6 @@ class FilePanel(QWidget):
         params['input_file'] = input_file
         params['output_dir'] = output_dir
         
-        # Get charge and multiplicity from parameter_panel
         if self.parameter_panel:
             try:
                 params['charge'] = int(self.parameter_panel.get_current_charge())
@@ -294,6 +291,8 @@ class FilePanel(QWidget):
         if filename:
             self.input_file_edit.setText(filename)
             self.display_file_info(filename)
+            
+            self.fileSelected.emit(filename)
 
     def display_file_info(self, filename):
         try:
@@ -304,9 +303,24 @@ class FilePanel(QWidget):
             status_text += f"Full path: {filename}\n"
             status_text += f"File size: {file_size:,} bytes\n"
             status_text += f"File type: {file_ext}\n"
+            
+            if file_ext == '.sdf':
+                try:
+                    from rdkit import Chem
+                    supplier = Chem.SDMolSupplier(filename)
+                    mol_count = len([mol for mol in supplier if mol is not None])
+                    status_text += f"Molecules in file: {mol_count}\n"
+                    status_text += "→ Molecules loaded in Molecular Analysis panel\n"
+                except Exception:
+                    status_text += "→ Could not read molecule count\n"
+            
             status_text += "-" * 50 + "\n"
             status_text += "Click 'Preview Input' to see what the generated input file will look like,\n"
-            status_text += "or click 'Make Input Files' to generate the actual files."
+            status_text += "or click 'Make Input Files' to create the actual files."
+            
+            if file_ext == '.sdf':
+                status_text += "\n\nFor SDF files: View molecules in the Molecular Analysis panel on the right."
+            
             self.status_text.setPlainText(status_text)
         except Exception as e:
             error_msg = f"Error reading file: {os.path.basename(filename)}\nError: {str(e)}"

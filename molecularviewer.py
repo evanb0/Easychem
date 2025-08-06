@@ -1,516 +1,394 @@
+import os
+import sys
 from PySide6.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QComboBox, QDialog,
-    QMessageBox, QFileDialog, QGroupBox
+    QWidget, QVBoxLayout, QHBoxLayout,
+    QLabel, QPushButton, QComboBox, QDialog,
+    QMessageBox, QFileDialog, QGroupBox, QTextEdit, QApplication, QSlider, QFormLayout
 )
 from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtCore import QEventLoop, QUrl
+from PySide6.QtCore import QEventLoop, QUrl, Signal, Qt
 from rdkit import Chem
 from rdkit.Chem import AllChem, SDWriter
 import py3Dmol
-import sys
-import tempfile
-import io
-from PIL import Image
-from PySide6.QtGui import QFont, QPixmap
+import math
 
 
-class Molecule3DWindow(QDialog):
+class MoleculeViewer(QWidget):
     """
-    Initial styling of the window, displaying it etc.
+    Main widget for Molecule Viewer application.
+    Displays molecules from SDF files, with the 3D view integrated directly.
     """
-    def __init__(self, mol_block, style, coord_system, distance_labels, conformer_label=""): 
+    def __init__(self):
         super().__init__()
-        # Set the window title dynamically based on the conformer label (e.g u are viewing conf 1/ or conf 9 etc.)
-        self.setWindowTitle(f"3D Molecule Viewer - {conformer_label}")
-        self.showMaximized()  # Open maximized (windowed fullscreen)
-        layout = QVBoxLayout()
-        self.web_view = QWebEngineView()
-        layout.addWidget(self.web_view)
-        self.setLayout(layout)
+        self.setWindowTitle("Molecule Viewer")
+        self.molecules = []
+        self.setup_ui()
+        # Initially hide the 3D viewer group
+        self.viewer_group.setVisible(False) 
 
-        # Initialize viewer with specified dimensions and add to viewer
-        viewer = py3Dmol.view(width=1000, height=1000) # random dimensions i chose idk
+    def setup_ui(self):
+        # This container holds all the options, but NOT the 3D viewer itself
+        self.options_container = QWidget()
+        options_layout = QVBoxLayout(self.options_container)
+        options_layout.setContentsMargins(0, 0, 0, 0)
+        options_layout.setSpacing(10)
+        
+        # File Information Section
+        file_group = QGroupBox("File Information")
+        file_layout = QVBoxLayout()
+        self.file_info_label = QLabel("No file selected")
+        self.file_info_label.setWordWrap(True)
+        file_layout.addWidget(self.file_info_label)
+        file_group.setLayout(file_layout)
+        options_layout.addWidget(file_group)
+
+        # Display Options Section
+        display_group = QGroupBox("Display Options")
+        display_layout = QVBoxLayout()
+        
+        combo_style = """
+            QComboBox { 
+                background-color: #edf2f4; 
+                color: #2b2d42; 
+                border: 1px solid #8d99ae; 
+                border-radius: 3px; 
+                padding: 2px; 
+            }
+            QComboBox QAbstractItemView {
+                background-color: #edf2f4;
+                color: #2b2d42;
+                selection-background-color: #8d99ae;
+                selection-color: #edf2f4;
+            }
+        """
+
+        style_row = QHBoxLayout()
+        style_row.addWidget(QLabel("Display Style:"))
+        self.style_selector = QComboBox()
+        self.style_selector.setStyleSheet(combo_style)
+        self.style_selector.addItems(['Stick', 'Ball and Stick', 'Surface'])
+        self.style_selector.currentIndexChanged.connect(self.render_selected_molecule)
+        style_row.addWidget(self.style_selector)
+        display_layout.addLayout(style_row)
+
+        molecule_row = QHBoxLayout()
+        molecule_row.addWidget(QLabel("Molecule:"))
+        self.molecule_selector = QComboBox()
+        self.molecule_selector.setStyleSheet(combo_style)
+        self.molecule_selector.currentIndexChanged.connect(self.on_molecule_change)
+        self.molecule_selector.setMaxVisibleItems(10)
+        molecule_row.addWidget(self.molecule_selector)
+        display_layout.addLayout(molecule_row)
+        
+        #Zoom slider (this actually has to be dragged, otherwise it doesnt work idk why)
+        zoom_row = QHBoxLayout()
+        zoom_row.addWidget(QLabel("Zoom:"))
+        self.zoom_slider = QSlider(Qt.Horizontal)
+        self.zoom_slider.setMinimum(100)
+        self.zoom_slider.setMaximum(200)
+        self.zoom_slider.setValue(120)
+        self.zoom_slider.setTickInterval(10)
+        self.zoom_slider.setSingleStep(10)
+        self.zoom_label = QLabel("1.2x")
+        self.zoom_slider.valueChanged.connect(self.update_zoom_label)
+        self.zoom_slider.sliderReleased.connect(self.render_selected_molecule)
+        
+        zoom_row.addWidget(self.zoom_slider)
+        zoom_row.addWidget(self.zoom_label)
+        display_layout.addLayout(zoom_row)
+        
+        display_group.setLayout(display_layout)
+        options_layout.addWidget(display_group)
+
+        # Buttons Section
+        button_layout = QHBoxLayout()
+        
+        self.export_sdf_button = QPushButton("Export Selected")
+        self.export_sdf_button.setMinimumHeight(30)
+        self.export_sdf_button.clicked.connect(self.on_export_sdf)
+        self.export_sdf_button.setEnabled(False)
+
+        #Button for exporting lowest energy molecules
+        self.export_lowest_energy_molecules_btn = QPushButton("Export 10 Lowest Energy Molecules")
+        self.export_lowest_energy_molecules_btn.setMinimumHeight(30)
+        self.export_lowest_energy_molecules_btn.clicked.connect(self.export_lowest_energy_molecules)
+        self.export_lowest_energy_molecules_btn.setEnabled(False)
+
+        button_layout.addWidget(self.export_sdf_button)
+        button_layout.addWidget(self.export_lowest_energy_molecules_btn)
+        options_layout.addLayout(button_layout)
+
+        # Molecular Information Section
+        self.info_group = QGroupBox("Molecular Information")
+        self.info_layout = QFormLayout()
+        
+        self.formula_label = QLabel("N/A") # all states N/A before file imported.
+        self.weight_label = QLabel("N/A")
+        self.atoms_label = QLabel("N/A")
+        self.bonds_label = QLabel("N/A")
+        self.energy_label = QLabel("N/A")
+
+        self.info_layout.addRow("Formula:", self.formula_label)
+        self.info_layout.addRow("Weight:", self.weight_label)
+        self.info_layout.addRow("Atoms:", self.atoms_label)
+        self.info_layout.addRow("Bonds:", self.bonds_label)
+        self.info_layout.addRow("Energy:", self.energy_label)
+        
+        self.info_group.setLayout(self.info_layout)
+        options_layout.addWidget(self.info_group)
+        
+        options_layout.addStretch()
+
+        # 3D Viewer Section - This is the part that will be hidden/shown
+        self.viewer_group = QGroupBox("3D Viewer")
+        viewer_layout = QVBoxLayout()
+        self.web_view = QWebEngineView()
+        viewer_layout.addWidget(self.web_view)
+        self.viewer_group.setLayout(viewer_layout)
+
+    def update_zoom_label(self, value):
+        zoom_factor = value / 100.0
+        self.zoom_label.setText(f"{zoom_factor:.1f}x")
+
+    def load_molecules_from_file(self, filename):
+        if not filename or not filename.lower().endswith('.sdf'):
+            self.clear_molecules()
+            return
+        
+        try:
+            supplier = Chem.SDMolSupplier(filename)
+            self.molecules = []
+            
+            for i, mol in enumerate(supplier):
+                if mol is not None:
+                    self.molecules.append((mol, i))
+
+            if not self.molecules:
+                QMessageBox.warning(self, "Error", "No valid molecules found in the SDF file.")
+                self.clear_molecules()
+                return
+
+            self.viewer_group.setVisible(True)
+            file_basename = os.path.basename(filename)
+            self.file_info_label.setText(f"File: {file_basename}\nMolecules found: {len(self.molecules)}")
+
+            self.molecule_selector.currentIndexChanged.disconnect()
+            self.molecule_selector.clear()
+            
+            for i, (mol, original_idx) in enumerate(self.molecules):
+                mol_name = mol.GetProp('_Name') if mol.HasProp('_Name') else f"Molecule {original_idx + 1}"
+                if not mol_name.strip():
+                    mol_name = f"Molecule {original_idx + 1}"
+                
+                try:
+                    formula = Chem.rdMolDescriptors.CalcMolFormula(mol)
+                    label = f"{mol_name} ({formula})"
+                except:
+                    label = mol_name
+                
+                self.molecule_selector.addItem(label)
+
+            self.molecule_selector.currentIndexChanged.connect(self.on_molecule_change)
+
+            self.export_sdf_button.setEnabled(True)
+            self.export_lowest_energy_molecules_btn.setEnabled(True)
+            
+            if self.molecules:
+                self.molecule_selector.setCurrentIndex(0)
+                self.on_molecule_change(0)
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to load molecules from SDF file.\n\n{str(e)}")
+            self.clear_molecules()
+            self.viewer_group.setVisible(False)
+
+    def clear_molecules(self):
+        self.molecules = []
+        self.file_info_label.setText("No file selected")
+        self.molecule_selector.clear()
+        self.export_sdf_button.setEnabled(False)
+        self.export_lowest_energy_molecules_btn.setEnabled(False)
+        self.web_view.setHtml("")
+        self.viewer_group.setVisible(False)
+        self.formula_label.setText("N/A")
+        self.weight_label.setText("N/A")
+        self.atoms_label.setText("N/A")
+        self.bonds_label.setText("N/A")
+        self.energy_label.setText("N/A")
+
+    def on_molecule_change(self, index):
+        if index < 0 or not self.molecules or index >= len(self.molecules):
+            self.formula_label.setText("N/A")
+            self.weight_label.setText("N/A")
+            self.atoms_label.setText("N/A")
+            self.bonds_label.setText("N/A")
+            self.energy_label.setText("N/A")
+            return
+        
+        mol, original_idx = self.molecules[index]
+        
+        try:
+            # Display basic molecule info
+            formula = Chem.rdMolDescriptors.CalcMolFormula(mol)
+            mol_weight = Chem.rdMolDescriptors.CalcExactMolWt(mol)
+            num_atoms = mol.GetNumAtoms()
+            num_bonds = mol.GetNumBonds()
+            
+            mol_name = mol.GetProp('_Name') if mol.HasProp('_Name') else f"Molecule {original_idx + 1}"
+            if not mol_name.strip():
+                mol_name = f"Molecule {original_idx + 1}"
+            
+            self.formula_label.setText(formula)
+            self.weight_label.setText(f"{mol_weight:.2f} g/mol")
+            self.atoms_label.setText(str(num_atoms))
+            self.bonds_label.setText(str(num_bonds))
+            self.energy_label.setText("Calculating...")
+
+            QApplication.processEvents()
+
+            # Calculate and display the energy
+            try:
+                # First check for 3D coordinates, if not present, embed them
+                if mol.GetNumConformers() == 0:
+                    AllChem.EmbedMolecule(mol, AllChem.ETKDG())
+                    
+                # Perform a quick energy minimization
+                ff = AllChem.MMFFGetMoleculeForceField(mol, AllChem.MMFFGetMoleculeProperties(mol))
+                ff.Minimize()
+                energy = ff.CalcEnergy()
+                
+                # Update the displayed info with the energy
+                self.energy_label.setText(f"{energy:.4f} kcal/mol")
+
+            except Exception as energy_e:
+                self.energy_label.setText("Error")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error getting molecule details: {str(e)}")
+            self.formula_label.setText("Error")
+            self.weight_label.setText("Error")
+            self.atoms_label.setText("Error")
+            self.bonds_label.setText("Error")
+            self.energy_label.setText("Error")
+            
+        self.render_selected_molecule()
+
+
+    def render_selected_molecule(self):
+        if not self.molecules:
+            return
+
+        index = self.molecule_selector.currentIndex()
+        if index < 0 or index >= len(self.molecules):
+            return
+
+        mol, original_idx = self.molecules[index]
+        style = self.style_selector.currentText()
+        
+        if not mol.GetNumConformers():
+            try:
+                AllChem.EmbedMolecule(mol)
+                AllChem.MMFFOptimizeMolecule(mol)
+            except:
+                QMessageBox.critical(self, "Error", "Could not generate 3D coordinates for this molecule.")
+                return
+        
+        mol_block = Chem.MolToMolBlock(mol)
+        
+        viewer = py3Dmol.view(width='100%', height='100%')
         viewer.addModel(mol_block, 'mol')
 
-        # Apply the selected display style
         if style == 'Stick':
             viewer.setStyle({'stick': {}})
         elif style == 'Ball and Stick':
             viewer.setStyle({'stick': {}, 'sphere': {}})
         elif style == 'Surface':
             viewer.setStyle({'stick': {}})
-            viewer.addSurface(py3Dmol.VDW, {'opacity': 0.85}) # Pretty sure this shows ED regions within the molecule
-        else:
-            viewer.setStyle({'stick': {}})
-
-        # Add coordinate system if requested
-        if coord_system in ['XYZ Axes', 'Both']:
-            # Add XYZ coordinate axes
-            # X-axis (red)
-            viewer.addLine({'start': {'x': -5, 'y': 0, 'z': 0}, 'end': {'x': 5, 'y': 0, 'z': 0}, 'color': 'red', 'linewidth': 3})
-            viewer.addLabel('X', {'position': {'x': 5.5, 'y': 0, 'z': 0}, 'fontColor': 'red', 'fontSize': 14, 'fontOpacity': 0.8})
-            
-            # Y-axis (green)
-            viewer.addLine({'start': {'x': 0, 'y': -5, 'z': 0}, 'end': {'x': 0, 'y': 5, 'z': 0}, 'color': 'green', 'linewidth': 3})
-            viewer.addLabel('Y', {'position': {'x': 0, 'y': 5.5, 'z': 0}, 'fontColor': 'green', 'fontSize': 14, 'fontOpacity': 0.8})
-            
-            # Z-axis (blue)
-            viewer.addLine({'start': {'x': 0, 'y': 0, 'z': -5}, 'end': {'x': 0, 'y': 0, 'z': 5}, 'color': 'blue', 'linewidth': 3})
-            viewer.addLabel('Z', {'position': {'x': 0, 'y': 0, 'z': 5.5}, 'fontColor': 'blue', 'fontSize': 14, 'fontOpacity': 0.8})
-
-        if coord_system in ['Grid Lines', 'Both']:
-            # Add grid lines for better spatial reference
-            grid_range = 10
-            grid_step = 2
-            grid_color = 'gray'
-            grid_opacity = 0.3
-            
-            # XY plane grid
-            for i in range(-grid_range, grid_range + 1, grid_step):
-                if i != 0:  # Don't overlap with main axes
-                    # Lines parallel to X-axis
-                    viewer.addLine({
-                        'start': {'x': -grid_range, 'y': i, 'z': 0}, 
-                        'end': {'x': grid_range, 'y': i, 'z': 0}, 
-                        'color': grid_color, 'linewidth': 1, 'opacity': grid_opacity
-                    })
-                    # Lines parallel to Y-axis
-                    viewer.addLine({
-                        'start': {'x': i, 'y': -grid_range, 'z': 0}, 
-                        'end': {'x': i, 'y': grid_range, 'z': 0}, 
-                        'color': grid_color, 'linewidth': 1, 'opacity': grid_opacity
-                    })
-
-        # Add distance labels if requested
-        if distance_labels != 'None':
-            self.add_distance_labels(viewer, mol_block, distance_labels)
-
-        # Zoom to fit the molecule in the view
+            viewer.addSurface(py3Dmol.VDW, {'opacity': 0.8})
+        
+        zoom_factor = self.zoom_slider.value() / 100.0
         viewer.zoomTo()
+        viewer.zoom(zoom_factor)
         html = viewer._make_html()
         self.web_view.setHtml(html)
 
-    def add_distance_labels(self, viewer, mol_block, distance_type):
-        """Add distance labels between atoms"""
-        try:
-            from rdkit import Chem
-            from rdkit.Chem import rdMolDescriptors
-            import math
-            
-            # Parse the mol block to get atom positions
-            mol = Chem.MolFromMolBlock(mol_block)
-            if not mol or not mol.GetNumConformers():
-                return
-                
-            conf = mol.GetConformer()
-            atoms = []
-            
-            # Get atom positions and symbols
-            for i in range(mol.GetNumAtoms()):
-                atom = mol.GetAtomWithIdx(i)
-                pos = conf.GetAtomPosition(i)
-                atoms.append({
-                    'idx': i,
-                    'symbol': atom.GetSymbol(),
-                    'pos': {'x': pos.x, 'y': pos.y, 'z': pos.z}
-                })
-            
-            if distance_type == 'Bond Lengths':
-                # Only show distances for bonded atoms
-                for bond in mol.GetBonds():
-                    idx1 = bond.GetBeginAtomIdx()
-                    idx2 = bond.GetEndAtomIdx()
-                    
-                    pos1 = atoms[idx1]['pos']
-                    pos2 = atoms[idx2]['pos']
-                    
-                    # Calculate distance
-                    dx = pos2['x'] - pos1['x']
-                    dy = pos2['y'] - pos1['y']
-                    dz = pos2['z'] - pos1['z']
-                    distance = math.sqrt(dx*dx + dy*dy + dz*dz)
-                    
-                    # Midpoint for label
-                    mid_x = (pos1['x'] + pos2['x']) / 2
-                    mid_y = (pos1['y'] + pos2['y']) / 2
-                    mid_z = (pos1['z'] + pos2['z']) / 2
-                    
-                    # Add distance label
-                    label_text = f"{distance:.2f}Å"
-                    viewer.addLabel(label_text, {
-                        'position': {'x': mid_x, 'y': mid_y, 'z': mid_z},
-                        'fontColor': 'black',
-                        'fontSize': 10,
-                        'fontOpacity': 0.8,
-                        'backgroundColor': 'white',
-                        'backgroundOpacity': 0.7
-                    })
-                    
-            elif distance_type == 'All Distances': # Not recommended, but I added it in case it may be useful.
-                max_distance = 5.0  # Only show distances up to 5 Angstroms to avoid clutter
-                
-                for i in range(len(atoms)):
-                    for j in range(i + 1, len(atoms)):
-                        pos1 = atoms[i]['pos']
-                        pos2 = atoms[j]['pos']
-                        
-                        # Calculate distance
-                        dx = pos2['x'] - pos1['x']
-                        dy = pos2['y'] - pos1['y']
-                        dz = pos2['z'] - pos1['z']
-                        distance = math.sqrt(dx*dx + dy*dy + dz*dz)
-                        
-                        # Only show distances within reasonable range
-                        if distance <= max_distance:
-                            # Midpoint for label
-                            mid_x = (pos1['x'] + pos2['x']) / 2
-                            mid_y = (pos1['y'] + pos2['y']) / 2
-                            mid_z = (pos1['z'] + pos2['z']) / 2
-                            
-                            # Add distance label
-                            label_text = f"{distance:.2f}Å"
-                            viewer.addLabel(label_text, {
-                                'position': {'x': mid_x, 'y': mid_y, 'z': mid_z},
-                                'fontColor': 'purple',
-                                'fontSize': 8,
-                                'fontOpacity': 0.6,
-                                'backgroundColor': 'lightyellow',
-                                'backgroundOpacity': 0.5
-                            })
-                            
-        except Exception as e:
-            print(f"Error adding distance labels: {e}")
-            # Continue without distance labels if there's an error
-
-
-class MoleculeViewer(QWidget):
-    """
-    Main widget for RDKit Molecule Viewer application.
-    Allows users to input SMILES, generate conformers, view them in 3D,
-    and export them as SDF files.
-    Updated to match the UI style of ParameterPanel and FilePanel.
-    """
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("RDKit Molecule Viewer")
-        self.setup_ui()
-
-    def setup_ui(self):
-        layout = QVBoxLayout()
-
-        # SMILES Input Section
-        smiles_group = QGroupBox("SMILES Input")
-        smiles_group.setStyleSheet("font-weight: bold;")
-        smiles_layout = QVBoxLayout()
-        
-        smiles_row = QHBoxLayout()
-        smiles_row.addWidget(QLabel("SMILES:"))
-        self.smiles_input = QLineEdit()
-        self.smiles_input.setPlaceholderText("Enter or load SMILES string...")
-        smiles_row.addWidget(self.smiles_input)
-        self.load_smiles_button = QPushButton("Browse")
-        self.load_smiles_button.clicked.connect(self.load_smiles_from_file)
-        smiles_row.addWidget(self.load_smiles_button)
-        smiles_layout.addLayout(smiles_row)
-        smiles_group.setLayout(smiles_layout)
-
-        # Display Options Section
-        display_group = QGroupBox("Display Options")
-        display_group.setStyleSheet("font-weight: bold;")
-        display_layout = QVBoxLayout()
-
-        style_row = QHBoxLayout()
-        style_row.addWidget(QLabel("Display Style:"))
-        self.style_selector = QComboBox()
-        self.style_selector.addItems(['Stick', 'Ball and Stick', 'Surface'])
-        style_row.addWidget(self.style_selector)
-        display_layout.addLayout(style_row)
-
-        conformer_row = QHBoxLayout()
-        conformer_row.addWidget(QLabel("Conformer:"))
-        self.conformer_selector = QComboBox()
-        self.conformer_selector.currentIndexChanged.connect(self.on_conformer_change)
-        conformer_row.addWidget(self.conformer_selector)
-        display_layout.addLayout(conformer_row)
-
-        display_group.setLayout(display_layout)
-
-        # Buttons Section
-        button_layout = QHBoxLayout()
-        
-        self.draw_button = QPushButton("Generate Conformers")
-        self.draw_button.setMinimumHeight(40)
-        self.draw_button.setStyleSheet("font-size: 12px; font-weight: bold; background-color: #4287f5; color: white;")
-        self.draw_button.clicked.connect(self.on_draw_click)
-        
-        self.view_button = QPushButton("Show 3D Molecule")
-        self.view_button.setMinimumHeight(30)
-        self.view_button.setStyleSheet("font-size: 12px; font-weight: bold; background-color: #4287f5; color: white;")
-        self.view_button.clicked.connect(self.show_selected_conformer)
-        self.view_button.setEnabled(False)
-        
-        self.export_sdf_button = QPushButton("Export SDF")
-        self.export_sdf_button.setMinimumHeight(30)
-        self.export_sdf_button.setStyleSheet("font-size: 10px; font-weight: bold; background-color: #f5b942; color: black;")
-        self.export_sdf_button.clicked.connect(self.on_export_sdf)
-        self.export_sdf_button.setEnabled(False)
-
-        button_layout.addWidget(self.view_button)
-        button_layout.addWidget(self.draw_button)
-        button_layout.addWidget(self.export_sdf_button)
-
-        # Status Display Section (matching FilePanel style)
-        status_group = QGroupBox("Status / Information")
-        status_layout = QVBoxLayout()
-        from PySide6.QtWidgets import QTextEdit
-        self.status_text = QTextEdit()
-        self.status_text.setMaximumHeight(200)
-        self.status_text.setPlaceholderText("Ready to generate molecular conformers")
-        self.status_text.setReadOnly(True)
-        status_layout.addWidget(self.status_text)
-        status_group.setLayout(status_layout)
-
-        # Final Layout
-        layout.addWidget(smiles_group)
-        layout.addWidget(display_group)
-        layout.addLayout(button_layout)
-        layout.addWidget(status_group)
-        layout.addStretch()
-        self.setLayout(layout)
-
-    def generate_conformers_with_energy(self, smiles, max_confs=10):
-        """
-        Generates 3D conformers for a given SMILES string and calculates their energies.
-        Uses RDKit's EmbedMultipleConfs for conformer generation and MMFF/UFF for energy calculation.
-        """
-        mol = Chem.MolFromSmiles(smiles)
-        if not mol:
-            return None
-
-        mol = Chem.AddHs(mol)  # Add hydrogens to the molecule
-        conf_ids = AllChem.EmbedMultipleConfs(mol, numConfs=max_confs)
-
-        results = []
-        for conf_id in conf_ids:
-            try:
-                # Try to use MMFF force field for energy calculation -> May be more accurate way than this, idk
-                ff = AllChem.MMFFGetMoleculeForceField(mol, AllChem.MMFFGetMoleculeProperties(mol), confId=conf_id)
-                energy = ff.CalcEnergy()
-            except:
-                try:
-                    # Fallback to UFF force field if MMFF fails -> Worse than above way (i think, but prob better for weirder molec)
-                    ff = AllChem.UFFGetMoleculeForceField(mol, confId=conf_id)
-                    energy = ff.CalcEnergy()
-                except:
-                    energy = None  # If both fail, energy is N/A (molecule is trash)
-            results.append((mol, conf_id, energy))
-
-        return results
-
-    def on_draw_click(self):
-        """
-        Handles the 'Generate Conformers' button click.
-        Generates conformers from the SMILES input, adds them to be selected,
-        and displays information in the status area.
-        """
-        smiles = self.smiles_input.text().strip()
-        
-        if not smiles:
-            self.status_text.setPlainText("Error: No SMILES string provided. Please enter a SMILES string.")
-            return
-
-        self.status_text.setPlainText("Processing... Generating conformers. \n\nThis may take a moment depending on the complexity of your molecule.")
-        self.draw_button.setEnabled(False)
-        
-        try:
-            results = self.generate_conformers_with_energy(smiles)
-            if not results:
-                self.status_text.setPlainText("Error: Could not generate conformers for the given SMILES.\n\nPlease check that the SMILES string is valid.")
-                self.draw_button.setEnabled(True)
-                return
-
-            # Sort conformers by energy (lowest energy first)
-            # Handle cases where energy might be None by putting them at the end
-            results_sorted = sorted(results, key=lambda x: x[2] if x[2] is not None else float('inf'))
-            self.mol_conformers = results_sorted
-
-            # Temporarily disconnect the signal to prevent double triggering
-            self.conformer_selector.currentIndexChanged.disconnect()
-            
-            # Populate conformer selector with energies (now sorted by energy)
-            self.conformer_selector.clear()
-            for i, (_, _, energy) in enumerate(self.mol_conformers):
-                if i == 0 and energy is not None:
-                    label = f"Conformer {i+1} (MOST STABLE)"
-                else:
-                    label = f"Conformer {i+1}"
-                
-                if energy is not None:
-                    label += f" (energy: {energy:.2f} kcal/mol)"
-                else:
-                    label += " (energy: N/A)"
-                self.conformer_selector.addItem(label)
-
-            # Set the first (most stable) conformer as selected
-            self.conformer_selector.setCurrentIndex(0)
-
-            # Reconnect the signal
-            self.conformer_selector.currentIndexChanged.connect(self.on_conformer_change)
-
-            # Update status with success information, highlighting most stable conformer
-            lowest_energy = self.mol_conformers[0][2] if self.mol_conformers[0][2] is not None else "N/A"
-            success_message = f"SUCCESS: Generated {len(results)} conformers!\n\n"
-            success_message += f"SMILES: {smiles}\n"
-            success_message += f"Display Style: {self.style_selector.currentText()}\n"
-            success_message += f"Number of conformers: {len(results)}\n"
-            success_message += f"📌 Most stable conformer energy: {lowest_energy}"
-            if lowest_energy != "N/A":
-                success_message += " kcal/mol"
-            success_message += "\n\n"
-            success_message += "Conformers are sorted by energy (most stable first).\n"
-            success_message += "Click 'Show 3D Molecule' to visualize the selected conformer,\n"
-            success_message += "or click 'Export SDF' to save it."
-            
-            self.status_text.setPlainText(success_message)
-            
-            # Trigger the conformer change event to update status with first conformer info
-            self.on_conformer_change(0)
-            
-            # Enable other buttons
-            self.view_button.setEnabled(True)
-            self.export_sdf_button.setEnabled(True)
-            
-        except Exception as e:
-            self.status_text.setPlainText(f"Error: Failed to generate conformers.\n\n{str(e)}")
-        
-        finally:
-            self.draw_button.setEnabled(True)
-
-    def on_conformer_change(self, index):
-        """
-        Handles the change in the conformer selector.
-        Updates the status display with information about the selected conformer.
-        """
-        if index < 0 or not hasattr(self, 'mol_conformers') or not self.mol_conformers:
-            return
-        
-        # Update status to show selected conformer info
-        _, _, energy = self.mol_conformers[index]
-        conformer_info = f"Selected: {self.conformer_selector.currentText()}\n\n"
-        conformer_info += f"SMILES: {self.smiles_input.text().strip()}\n"
-        conformer_info += f"Display Style: {self.style_selector.currentText()}\n"
-        if energy is not None:
-            conformer_info += f"Energy: {energy:.2f} kcal/mol\n\n"
-        else:
-            conformer_info += "Energy: N/A\n\n"
-        conformer_info += "Click 'Show 3D Molecule' to visualize this conformer,\n"
-        conformer_info += "or click 'Export SDF' to save it as an SDF file."
-        
-        self.status_text.setPlainText(conformer_info)
-
-    def show_selected_conformer(self):
-        """
-        Displays the currently selected conformer in a new 3D viewer window.
-        """
-        if not hasattr(self, 'mol_conformers') or not self.mol_conformers:
-            self.status_text.setPlainText("Error: No conformers available. Please generate conformers first.")
-            return
-
-        index = self.conformer_selector.currentIndex()
-        if index < 0 or index >= len(self.mol_conformers):
-            self.status_text.setPlainText("Error: No conformer selected. Please select a conformer first.")
-            return
-
-        mol, conf_id, _ = self.mol_conformers[index]
-        style = self.style_selector.currentText()
-        mol_block = Chem.MolToMolBlock(mol, confId=conf_id)
-        
-        conformer_label = self.conformer_selector.currentText()
-        
-        coord_system = 'XYZ Axes'  # Could also use 'XYZ Axes', 'Grid Lines', or 'Both'
-        distance_labels = 'Bond Lengths'  # Could also use 'Bond Lengths' or 'All Distances'
-
-        viewer_window = Molecule3DWindow(mol_block, style, coord_system, distance_labels, conformer_label)
-        viewer_window.exec_()
-
-
     def on_export_sdf(self):
-        """
-        Handles the 'Export SDF' button click.
-        Exports the currently selected conformer as an SDF file to a user-specified location.
-        """
-        if not hasattr(self, 'mol_conformers') or not self.mol_conformers:
-            self.status_text.setPlainText("Error: No conformers available. Please generate conformers first.")
+        if not self.molecules:
+            QMessageBox.warning(self, "Error", "No molecules available. Please select an SDF file in File Operations.")
             return
 
-        # Get the currently selected conformer
-        current_index = self.conformer_selector.currentIndex()
-        if current_index == -1: # No conformer selected
-            self.status_text.setPlainText("Error: No conformer selected. Please select a conformer to export.")
+        current_index = self.molecule_selector.currentIndex()
+        if current_index == -1:
+            QMessageBox.warning(self, "Error", "No molecule selected. Please select a molecule to export.")
             return
 
-        mol, conf_id, _ = self.mol_conformers[current_index]
+        mol, original_idx = self.molecules[current_index]
 
-        # Open file dialog to get save location from user
         filename, _ = QFileDialog.getSaveFileName(self, "Save SDF File", "molecule.sdf", "SDF Files (*.sdf)")
 
         if filename:
             try:
-                # Write the selected conformer to the chosen file
                 writer = SDWriter(filename)
-                writer.write(mol, confId=conf_id)
+                writer.write(mol)
                 writer.close()
                 
-                # Update status with export success
                 export_message = f"SUCCESS: SDF file exported!\n\n"
                 export_message += f"File saved to: {filename}\n"
-                export_message += f"Conformer: {self.conformer_selector.currentText()}\n"
-                export_message += f"SMILES: {self.smiles_input.text().strip()}"
+                export_message += f"Molecule: {self.molecule_selector.currentText()}"
                 
-                self.status_text.setPlainText(export_message)
+                QMessageBox.information(self, "Export Successful", export_message)
             except Exception as e:
-                self.status_text.setPlainText(f"Error: Failed to export SDF file.\n\n{str(e)}")
+                QMessageBox.critical(self, "Error", f"Failed to export SDF file.\n\n{str(e)}")
 
-    def load_smiles_from_file(self):
-        """
-        Handles the 'Browse' button click.
-        Opens a file dialog, reads an SDF or XYZ file, extracts the SMILES string,
-        and adds the SMILES extracted to smiles input box. 
-        """
-        file_filters = "Chemical Files (*.sdf *.xyz);;SDF Files (*.sdf);;XYZ Files (*.xyz)"
-        filename, _ = QFileDialog.getOpenFileName(self, "Select Molecule File", "", file_filters)
+    def export_lowest_energy_molecules(self):
+        if not self.molecules:
+            QMessageBox.warning(self, "Error", "No molecules available. Please select an SDF file.")
+            return
 
+        QMessageBox.information(self, "Calculation", "Calculating energies for all molecules... This may take a moment.")
+        QApplication.processEvents()
+
+        molecules_with_energy = []
+        for mol, original_idx in self.molecules:
+            try:
+                # Ensure the molecule has 3D coordinates
+                if mol.GetNumConformers() == 0:
+                    AllChem.EmbedMolecule(mol, AllChem.ETKDG())
+
+                # Perform energy minimization and get the energy
+                ff = AllChem.MMFFGetMoleculeForceField(mol, AllChem.MMFFGetMoleculeProperties(mol))
+                ff.Minimize()
+                energy = ff.CalcEnergy()
+                
+                # Store the molecule object and its calculated energy
+                molecules_with_energy.append((mol, energy))
+            except Exception:
+                # If energy calculation fails, skip this molecule
+                continue
+
+        if not molecules_with_energy:
+            QMessageBox.critical(self, "Error", "No molecules could be processed for energy calculation.")
+            return
+
+        # Sort molecules by energy
+        molecules_with_energy.sort(key=lambda x: x[1])
+
+        # Get the top 10 lowest energy molecules, or fewer if not available
+        lowest_10_molecules = [item[0] for item in molecules_with_energy[:10]]
+
+        filename, _ = QFileDialog.getSaveFileName(self, "Save Lowest Energy Molecules", "lowest_energy_molecules.sdf", "SDF Files (*.sdf)")
+        
         if filename:
             try:
-                mol = None
-                # Load molecule based on file extension
-                if filename.lower().endswith('.sdf'):
-                    mol = Chem.MolFromMolFile(filename)
-                elif filename.lower().endswith('.xyz'):
-                    mol = Chem.MolFromXYZFile(filename)
-
-                if mol:
-                    # Convert loaded molecule to SMILES and set it in the input field
-                    smiles = Chem.MolToSmiles(mol)
-                    self.smiles_input.setText(smiles)
-                    
-                    # Update status display
-                    file_basename = filename.split('/')[-1]  # Get just the filename
-                    load_message = f"SMILES loaded from file: {file_basename}\n\n"
-                    load_message += f"SMILES: {smiles}\n"
-                    load_message += f"File path: {filename}\n\n"
-                    load_message += "Click 'Generate Conformers' to create 3D conformers for this molecule."
-                    
-                    self.status_text.setPlainText(load_message)
-                else:
-                    self.status_text.setPlainText("Error: Could not load molecule from the selected file.\n\nEnsure it's a valid SDF or XYZ file.")
+                writer = SDWriter(filename)
+                for mol in lowest_10_molecules:
+                    writer.write(mol)
+                writer.close()
+                
+                export_message = f"SUCCESS: Exported {len(lowest_10_molecules)} lowest energy molecules!\n\n"
+                export_message += f"File saved to: {filename}"
+                QMessageBox.information(self, "Export Successful", export_message)
             except Exception as e:
-                self.status_text.setPlainText(f"Error: Failed to load file.\n\n{str(e)}")
-
-
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    viewer = MoleculeViewer()
-    viewer.show()
-    sys.exit(app.exec_())
+                QMessageBox.critical(self, "Error", f"Failed to export SDF file.\n\n{str(e)}")
+        else:
+            QMessageBox.information(self, "Export Cancelled", "Export cancelled by user.")
