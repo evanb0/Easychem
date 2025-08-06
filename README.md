@@ -1,5 +1,7 @@
 # summerproj
 
+MOLECULARVIEWER Still does not work on windows (and i still dont know why)
+
 Completely removed SMILES FUNCTIONALITY where initially we made new conformers from a file.
 - When a .sdf file is inserted, a 3D Molecular viewer opens at the bottom of the screen, allowing each molecule within that file to be selected and viewed accordingly.
 - Option to export 10 lowest energy molecules within the file (this does work for the 6k molecule file I tried it, although it does make the app freeze)
