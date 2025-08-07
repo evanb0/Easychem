@@ -11,6 +11,7 @@ Completely removed SMILES FUNCTIONALITY where initially we made new conformers f
 
 >[!Important] 
 >Possible things to do:
+
 -[ ] Ability to upload multiple files at once and treat them all at once
 -[ ] Amend the methodology section for both Orca and Gaussian to include more (and more relevant) methods
 -[ ] Find a way to work with XYZ files (and many of them at once)
