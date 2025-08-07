@@ -1,6 +1,6 @@
 # summerproj
 
-MOLECULARVIEWER Still does not work on windows (and i still dont know why)
+MOLECULARVIEWER Still does not work on windows
 
 
 >[!Important] 
