@@ -46,6 +46,7 @@ class QPrepWorker(QObject):
                     if os.path.isfile(src):
                         import shutil
                         shutil.move(src, dst)
+                        shutil.rmtree(qcalc_dir, ignore_errors=True)
 
             self.finished.emit()
             self.resultReady.emit("Input files generated successfully.")

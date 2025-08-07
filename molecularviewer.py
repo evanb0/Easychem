@@ -172,7 +172,7 @@ class MoleculeViewer(QWidget):
             return
         
         try:
-            supplier = Chem.SDMolSupplier(filename)
+            supplier = Chem.SDMolSupplier(filename, removeHs=False)
             self.molecules = []
             
             for i, mol in enumerate(supplier):
