@@ -55,13 +55,8 @@ class MoleculeViewer(QWidget):
                 padding: 2px; 
                 combobox-popup: 0;
             }
-            QComboBox QAbstractItemView {
-                background-color: #edf2f4;
-                color: #2b2d42;
-                selection-background-color: #8d99ae;
-                selection-color: #edf2f4;
-            }
         """
+        
 
         style_row = QHBoxLayout()
         style_row.addWidget(QLabel("Display Style:"))
@@ -98,8 +93,22 @@ class MoleculeViewer(QWidget):
         # zoom_row.addWidget(self.zoom_label)
         # display_layout.addLayout(zoom_row)
 
-        # // List slider  \\
+        # // List slider to navigate through the molecules to display (replacement for zoom slider)\\
+        # // The idea is that once we upload a file we can take the number of molecules from it and set the slider range accordingly. Then if slider is changed (left/right arrow or dragged with mouse) we display the corresponding molecule.
+        list_slider_row = QHBoxLayout()
+        list_slider_row.addWidget(QLabel("Molecule List:"))
+        self.list_slider = QSlider(Qt.Horizontal)
+        self.list_slider.setMinimum(0)
+        self.list_slider.setMaximum(0) # until file uploaded
+        self.list_slider.setValue(0)
+        self.list_slider.setTickInterval(1)
+        self.list_slider.setSingleStep(1)
+        self.list_slider.valueChanged.connect(self.on_molecule_change)
+        self.list_slider.sliderReleased.connect(self.render_selected_molecule)
         
+        list_slider_row.addWidget(self.list_slider)
+        display_layout.addLayout(list_slider_row)
+
         display_group.setLayout(display_layout)
         options_layout.addWidget(display_group)
 
@@ -178,6 +187,7 @@ class MoleculeViewer(QWidget):
             self.viewer_group.setVisible(True)
             file_basename = os.path.basename(filename)
             self.file_info_label.setText(f"File: {file_basename}\nMolecules found: {len(self.molecules)}")
+            self.list_slider.setMaximum(len(self.molecules) - 1)
 
             self.molecule_selector.currentIndexChanged.disconnect()
             self.molecule_selector.clear()
@@ -233,7 +243,10 @@ class MoleculeViewer(QWidget):
             self.mult_label.setText("N/A")
             self.energy_label.setText("N/A")
             return
-        
+
+        self.list_slider.setValue(index)
+        self.molecule_selector.setCurrentIndex(index)
+
         mol, original_idx = self.molecules[index]
         
         try:
@@ -298,8 +311,8 @@ class MoleculeViewer(QWidget):
     def render_selected_molecule(self):
         if not self.molecules:
             return
-
-        index = self.molecule_selector.currentIndex()
+        
+        index = self.list_slider.value()
         if index < 0 or index >= len(self.molecules):
             return
 
