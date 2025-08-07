@@ -45,7 +45,7 @@ class MoleculeViewer(QWidget):
         # Display Options Section
         display_group = QGroupBox("Display Options")
         display_layout = QVBoxLayout()
-        
+
         combo_style = """
             QComboBox { 
                 background-color: #edf2f4; 
@@ -53,6 +53,7 @@ class MoleculeViewer(QWidget):
                 border: 1px solid #8d99ae; 
                 border-radius: 3px; 
                 padding: 2px; 
+                combobox-popup: 0;
             }
             QComboBox QAbstractItemView {
                 background-color: #edf2f4;
@@ -81,21 +82,23 @@ class MoleculeViewer(QWidget):
         display_layout.addLayout(molecule_row)
         
         #Zoom slider (this actually has to be dragged, otherwise it doesnt work idk why)
-        zoom_row = QHBoxLayout()
-        zoom_row.addWidget(QLabel("Zoom:"))
-        self.zoom_slider = QSlider(Qt.Horizontal)
-        self.zoom_slider.setMinimum(100)
-        self.zoom_slider.setMaximum(200)
-        self.zoom_slider.setValue(120)
-        self.zoom_slider.setTickInterval(10)
-        self.zoom_slider.setSingleStep(10)
-        self.zoom_label = QLabel("1.2x")
-        self.zoom_slider.valueChanged.connect(self.update_zoom_label)
-        self.zoom_slider.sliderReleased.connect(self.render_selected_molecule)
+        # zoom_row = QHBoxLayout()
+        # zoom_row.addWidget(QLabel("Zoom:"))
+        # self.zoom_slider = QSlider(Qt.Horizontal)
+        # self.zoom_slider.setMinimum(100)
+        # self.zoom_slider.setMaximum(200)
+        # self.zoom_slider.setValue(120)
+        # self.zoom_slider.setTickInterval(10)
+        # self.zoom_slider.setSingleStep(10)
+        # self.zoom_label = QLabel("1.2x")
+        # self.zoom_slider.valueChanged.connect(self.update_zoom_label)
+        # self.zoom_slider.sliderReleased.connect(self.render_selected_molecule)
         
-        zoom_row.addWidget(self.zoom_slider)
-        zoom_row.addWidget(self.zoom_label)
-        display_layout.addLayout(zoom_row)
+        # zoom_row.addWidget(self.zoom_slider)
+        # zoom_row.addWidget(self.zoom_label)
+        # display_layout.addLayout(zoom_row)
+
+        # // List slider  \\
         
         display_group.setLayout(display_layout)
         options_layout.addWidget(display_group)
@@ -126,13 +129,17 @@ class MoleculeViewer(QWidget):
         self.weight_label = QLabel("N/A")
         self.atoms_label = QLabel("N/A")
         self.bonds_label = QLabel("N/A")
+        self.charge_label = QLabel("N/A")
+        self.mult_label = QLabel("N/A")
         self.energy_label = QLabel("N/A")
 
         self.info_layout.addRow("Formula:", self.formula_label)
         self.info_layout.addRow("Weight:", self.weight_label)
         self.info_layout.addRow("Atoms:", self.atoms_label)
         self.info_layout.addRow("Bonds:", self.bonds_label)
-        self.info_layout.addRow("Energy:", self.energy_label)
+        self.info_layout.addRow("Charge:", self.charge_label)
+        self.info_layout.addRow("Multiplicity:", self.mult_label)
+        self.info_layout.addRow("(MMFF) Energy:", self.energy_label)
         
         self.info_group.setLayout(self.info_layout)
         options_layout.addWidget(self.info_group)
@@ -146,9 +153,9 @@ class MoleculeViewer(QWidget):
         viewer_layout.addWidget(self.web_view)
         self.viewer_group.setLayout(viewer_layout)
 
-    def update_zoom_label(self, value):
-        zoom_factor = value / 100.0
-        self.zoom_label.setText(f"{zoom_factor:.1f}x")
+    # def update_zoom_label(self, value):
+    #     zoom_factor = value / 100.0
+    #     self.zoom_label.setText(f"{zoom_factor:.1f}x")
 
     def load_molecules_from_file(self, filename):
         if not filename or not filename.lower().endswith('.sdf'):
@@ -222,6 +229,8 @@ class MoleculeViewer(QWidget):
             self.weight_label.setText("N/A")
             self.atoms_label.setText("N/A")
             self.bonds_label.setText("N/A")
+            self.charge_label.setText("N/A")
+            self.mult_label.setText("N/A")
             self.energy_label.setText("N/A")
             return
         
@@ -233,6 +242,8 @@ class MoleculeViewer(QWidget):
             mol_weight = Chem.rdMolDescriptors.CalcExactMolWt(mol)
             num_atoms = mol.GetNumAtoms()
             num_bonds = mol.GetNumBonds()
+            charge = Chem.GetFormalCharge(mol)
+            mult = self.getMult(mol)
             
             mol_name = mol.GetProp('_Name') if mol.HasProp('_Name') else f"Molecule {original_idx + 1}"
             if not mol_name.strip():
@@ -242,6 +253,8 @@ class MoleculeViewer(QWidget):
             self.weight_label.setText(f"{mol_weight:.2f} g/mol")
             self.atoms_label.setText(str(num_atoms))
             self.bonds_label.setText(str(num_bonds))
+            self.charge_label.setText(str(charge))
+            self.mult_label.setText(str(mult))
             self.energy_label.setText("Calculating...")
 
             QApplication.processEvents()
@@ -269,10 +282,18 @@ class MoleculeViewer(QWidget):
             self.weight_label.setText("Error")
             self.atoms_label.setText("Error")
             self.bonds_label.setText("Error")
+            self.charge_label.setText("Error")
+            self.mult_label.setText("Error")
             self.energy_label.setText("Error")
             
         self.render_selected_molecule()
 
+    def getMult(self, mol):
+        """2S + 1, where S is the total spin, 1 unpaired electron = 1/2"""
+        unpaired_electrons = 0
+        for atom in mol.GetAtoms():
+            unpaired_electrons += atom.GetNumRadicalElectrons()
+        return int(unpaired_electrons / 2 + 1)
 
     def render_selected_molecule(self):
         if not self.molecules:
@@ -306,9 +327,9 @@ class MoleculeViewer(QWidget):
             viewer.setStyle({'stick': {}})
             viewer.addSurface(py3Dmol.VDW, {'opacity': 0.8})
         
-        zoom_factor = self.zoom_slider.value() / 100.0
+        # zoom_factor = self.zoom_slider.value() / 100.0
         viewer.zoomTo()
-        viewer.zoom(zoom_factor)
+        # viewer.zoom(zoom_factor)
         html = viewer._make_html()
         self.web_view.setHtml(html)
 
