@@ -94,7 +94,7 @@ class ParameterPanel(QWidget):
         
         processor_group.setLayout(processor_layout)
 
-        #Memory 
+        # Memory 
         memory_group = QGroupBox("Memory")
         memory_layout = QVBoxLayout()
 

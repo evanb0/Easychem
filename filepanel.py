@@ -1,7 +1,7 @@
 import os
 import sys
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit, QFileDialog
+    QWidget, QVBoxLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit, QFileDialog, QListWidget, QListWidgetItem
 )
 from PySide6.QtCore import QThread, Signal
 from qprepworker import QPrepWorker
@@ -12,22 +12,33 @@ FILE_FILTERS = [
     "Gaussian Input Files (*.com *.gjf)",
 ]
 
+
 class FilePanel(QWidget):
     """Panel to manage input file selection, output directory, and generate input scripts."""
-    
-    # Signal to notify when a new file is selected
-    fileSelected = Signal(str)
+
+    # Signal to notify when new files are selected
+    filesSelected = Signal(list)
+    fileSelected = Signal(str)  # Keep for backward compatibility
+
+    # New signal for when a single file is selected from the list
+    singleFileSelected = Signal(str)
 
     def __init__(self, model=None, parameter_panel=None, molecular_viewer=None):
         super().__init__()
         self.model = model
         self.parameter_panel = parameter_panel
         self.molecular_viewer = molecular_viewer
+        self.selected_files = []
         self.setup_ui()
         self.connect_model_signals()
-        
+
         if self.molecular_viewer:
+            self.filesSelected.connect(self.molecular_viewer.load_molecules_from_files)
+            # Keep backward compatibility for single file
             self.fileSelected.connect(self.molecular_viewer.load_molecules_from_file)
+            # Connect the new signal to the molecular viewer
+            self.singleFileSelected.connect(self.molecular_viewer.load_molecules_from_file)
+
 
     def setup_ui(self):
         layout = QVBoxLayout()
@@ -35,16 +46,27 @@ class FilePanel(QWidget):
         # Input File Section
         input_group = QGroupBox("Input Files")
         input_layout = QVBoxLayout()
-        input_row = QHBoxLayout()
-        input_row.addWidget(QLabel("File"))
-        self.input_file_edit = QLineEdit()
-        self.input_file_edit.setPlaceholderText("Select File")
-        self.input_file_edit.setStyleSheet("QLineEdit { background-color: #edf2f4; color: #2b2d42; border: 1px solid #8d99ae; border-radius: 3px; padding: 5px; }")
-        input_row.addWidget(self.input_file_edit)
-        self.browse_input_btn = QPushButton("Browse")
-        self.browse_input_btn.clicked.connect(self.get_filename)
-        input_row.addWidget(self.browse_input_btn)
-        input_layout.addLayout(input_row)
+        
+        # File selection buttons
+        button_row = QHBoxLayout()
+        self.browse_multiple_btn = QPushButton("Browse Files")
+        self.browse_multiple_btn.clicked.connect(self.get_multiple_filenames)
+        self.clear_files_btn = QPushButton("Clear Files")
+        self.clear_files_btn.clicked.connect(self.clear_files)
+        
+        button_row.addWidget(self.browse_multiple_btn)
+        button_row.addWidget(self.clear_files_btn)
+        input_layout.addLayout(button_row)
+        
+        # File list display
+        self.file_list = QListWidget()
+        self.file_list.setMaximumHeight(120)
+        self.file_list.setStyleSheet(
+            "QListWidget { background-color: #edf2f4; color: #2b2d42; border: 1px solid #8d99ae; border-radius: 3px; padding: 5px; }")
+        # Connect the itemClicked signal to the new method
+        self.file_list.itemClicked.connect(self.on_file_list_item_clicked)
+        input_layout.addWidget(self.file_list)
+        
         input_group.setLayout(input_layout)
 
         # Output Directory Section
@@ -54,7 +76,8 @@ class FilePanel(QWidget):
         output_row.addWidget(QLabel("Output Directory"))
         self.output_dir_edit = QLineEdit()
         self.output_dir_edit.setPlaceholderText("Select output directory")
-        self.output_dir_edit.setStyleSheet("QLineEdit { background-color: #edf2f4; color: #2b2d42; border: 1px solid #8d99ae; border-radius: 3px; padding: 5px; }")
+        self.output_dir_edit.setStyleSheet(
+            "QLineEdit { background-color: #edf2f4; color: #2b2d42; border: 1px solid #8d99ae; border-radius: 3px; padding: 5px; }")
         output_row.addWidget(self.output_dir_edit)
         self.browse_output_btn = QPushButton("Browse")
         self.browse_output_btn.clicked.connect(self.get_output_directory)
@@ -81,7 +104,8 @@ class FilePanel(QWidget):
         status_group = QGroupBox("Status / Preview")
         status_layout = QVBoxLayout()
         self.status_text = QTextEdit()
-        self.status_text.setStyleSheet("QTextEdit { background-color: #edf2f4; color: #2b2d42; border: 1px solid #8d99ae; border-radius: 3px; padding: 5px; }")
+        self.status_text.setStyleSheet(
+            "QTextEdit { background-color: #edf2f4; color: #2b2d42; border: 1px solid #8d99ae; border-radius: 3px; padding: 5px; }")
         self.status_text.setMaximumHeight(200)
         self.status_text.setPlaceholderText("Ready to create input files")
         self.status_text.setReadOnly(True)
@@ -130,25 +154,154 @@ class FilePanel(QWidget):
     def update_button_color(self):
         style = ""
         slurm_style = ""
-        
+
         self.preview_btn.setStyleSheet(style)
         self.make_btn.setStyleSheet(style)
         self.slurm_btn.setStyleSheet(slurm_style)
 
+    def clear_files(self):
+        """Clear all selected files"""
+        self.selected_files.clear()
+        self.file_list.clear()
+        self.status_text.setPlainText("All files cleared. Ready to select new files.")
+        self.filesSelected.emit([])
+
+
+    def get_single_filename(self):
+        """Select a single file"""
+        initial_filter = FILE_FILTERS[0]
+        filters = ';;'.join(FILE_FILTERS)
+        filename, selected_filter = QFileDialog.getOpenFileName(
+            self,
+            caption="Select Single File",
+            filter=filters,
+            selectedFilter=initial_filter
+        )
+        if filename:
+            self.selected_files = [filename]  # Replace with single file
+            self.update_file_list()
+            self.display_files_info()
+            # Emit both signals for compatibility
+            self.fileSelected.emit(filename)
+            self.filesSelected.emit(self.selected_files)
+
+    def get_multiple_filenames(self):
+        """Select multiple files"""
+        initial_filter = FILE_FILTERS[0]
+        filters = ';;'.join(FILE_FILTERS)
+        filenames, selected_filter = QFileDialog.getOpenFileNames(
+            self,
+            caption="Select Multiple Files",
+            filter=filters,
+            selectedFilter=initial_filter
+        )
+        if filenames:
+            self.selected_files = filenames
+            self.update_file_list()
+            self.display_files_info()
+            self.filesSelected.emit(self.selected_files)
+            # For backward compatibility and to display something
+            if self.selected_files:
+                self.fileSelected.emit(self.selected_files[0])
+                # Automatically select the first item and load it
+                first_item = self.file_list.item(0)
+                self.file_list.setCurrentItem(first_item)
+                self.on_file_list_item_clicked(first_item)
+
+    def update_file_list(self):
+        """Update the file list widget"""
+        self.file_list.clear()
+        for filename in self.selected_files:
+            item = QListWidgetItem(os.path.basename(filename))
+            item.setToolTip(filename)  # Show full path on hover
+            self.file_list.addItem(item)
+    
+    def on_file_list_item_clicked(self, item):
+        """Method to handle clicks on the file list widget."""
+        index = self.file_list.row(item)
+        if 0 <= index < len(self.selected_files):
+            file_path = self.selected_files[index]
+            self.singleFileSelected.emit(file_path)
+
+
+    def display_files_info(self):
+        """Display information about selected files"""
+        if not self.selected_files:
+            self.status_text.setPlainText("No files selected.")
+            return
+
+        try:
+            status_text = f"Selected {len(self.selected_files)} file(s):\n"
+            total_size = 0
+            sdf_count = 0
+            
+            for i, filename in enumerate(self.selected_files):
+                file_basename = os.path.basename(filename)
+                file_size = os.path.getsize(filename)
+                file_ext = os.path.splitext(filename)[1].lower()
+                total_size += file_size
+                
+                status_text += f"{i+1}. {file_basename} ({file_size:,} bytes, {file_ext})\n"
+                
+                if file_ext == '.sdf':
+                    sdf_count += 1
+                    try:
+                        from rdkit import Chem
+                        supplier = Chem.SDMolSupplier(filename)
+                        mol_count = len([mol for mol in supplier if mol is not None])
+                        status_text += f"   → {mol_count} molecules\n"
+                    except Exception:
+                        status_text += "   → Could not read molecule count\n"
+
+            status_text += f"\nTotal size: {total_size:,} bytes\n"
+            if sdf_count > 0:
+                status_text += f"SDF files: {sdf_count}\n"
+            
+            status_text += "-" * 50 + "\n"
+            status_text += "Click 'Preview Input' to see what the generated input files will look like,\n"
+            status_text += "or click 'Make Input Files' to create the actual files for all selected files."
+
+            if sdf_count > 0:
+                status_text += f"\n\nFor SDF files: View molecules in the Molecular Analysis panel on the right."
+
+            self.status_text.setPlainText(status_text)
+        except Exception as e:
+            error_msg = f"Error reading files: {str(e)}"
+            self.status_text.setPlainText(error_msg)
+
     def preview_input(self):
         params = self.collect_input_params()
-        if not params['input_file']:
-            self.status_text.setPlainText("Error: No input file selected. Please select a file first.")
+        if not params['input_files']:
+            self.status_text.setPlainText("Error: No input files selected. Please select files first.")
             self.preview_btn.setEnabled(True)
             return
+            
         try:
-            if params['software'].lower() == 'orca':
-                preview_content = self.generate_orca_preview(params)
-            elif params['software'].lower() == 'gaussian':
-                preview_content = self.generate_gaussian_preview(params)
-            else:
-                preview_content = "Error: Unsupported software type."
-            self.status_text.setPlainText(f"=== INPUT FILE PREVIEW ===\n\n{preview_content}\n\n{'='*50}\n\nThis is a preview of the input file that will be generated.\nClick 'Make Input Files' to create the actual files.")
+            preview_content = ""
+            for i, input_file in enumerate(params['input_files']):
+                file_params = params.copy()
+                file_params['input_file'] = input_file
+                file_params['molecule_name'] = os.path.splitext(os.path.basename(input_file))[0]
+                
+                preview_content += f"=== FILE {i+1}: {os.path.basename(input_file)} ===\n\n"
+                
+                if params['software'].lower() == 'orca':
+                    file_preview = self.generate_orca_preview(file_params)
+                elif params['software'].lower() == 'gaussian':
+                    file_preview = self.generate_gaussian_preview(file_params)
+                else:
+                    file_preview = "Error: Unsupported software type."
+                
+                preview_content += file_preview + "\n\n"
+                
+                if i < len(params['input_files']) - 1:  # Add separator between files
+                    preview_content += "=" * 70 + "\n\n"
+            
+            preview_content += f"{'=' * 70}\n\nThis is a preview of the input files that will be generated.\n"
+            preview_content += f"Total files to process: {len(params['input_files'])}\n"
+            preview_content += "Click 'Make Input Files' to create the actual files."
+            
+            self.status_text.setPlainText(preview_content)
         except Exception as e:
             self.status_text.setPlainText(f"Error generating preview: {str(e)}")
         self.preview_btn.setEnabled(True)
@@ -182,10 +335,15 @@ class FilePanel(QWidget):
 
     def run_qprep(self):
         params = self.collect_input_params()
-        if not params['input_file']:
-            self.status_text.setPlainText("Error: No input file selected. Please select a file.")
+        if not params['input_files']:
+            self.status_text.setPlainText("Error: No input files selected. Please select files.")
             return
-        self.status_text.setPlainText("Processing... Generating input files. \n\nThis may take a moment depending on the size of your input file.")
+            
+        file_count = len(params['input_files'])
+        self.status_text.setPlainText(
+            f"Processing... Generating input files for {file_count} file(s). \n\n"
+            f"This may take a moment depending on the size and number of your input files.")
+        
         self.thread = QThread()
         self.worker = QPrepWorker(params)
         self.worker.moveToThread(self.thread)
@@ -204,7 +362,10 @@ class FilePanel(QWidget):
     def on_qprep_success(self, message):
         params = self.collect_input_params()
         output_dir = params.get('output_dir', 'Current directory')
+        file_count = len(params['input_files'])
+        
         success_message = f"SUCCESS: Input files generated successfully!\n\n"
+        success_message += f"Files processed: {file_count}\n"
         success_message += f"Output location: {output_dir}\n"
         success_message += f"Software: {params['software']}\n"
         success_message += f"Method: {params['functional']}/{params['basis']}\n"
@@ -226,11 +387,15 @@ class FilePanel(QWidget):
             params['basis'] = self.model.basisSet()
             params['nprocs'] = self.model.nprocs()
             params['mem'] = self.model.mem()
-        input_file = self.input_file_edit.text().strip()
-        output_dir = self.output_dir_edit.text().strip()
-        params['input_file'] = input_file
-        params['output_dir'] = output_dir
+            
+        # Use selected_files list instead of single file
+        params['input_files'] = self.selected_files
+        # Keep input_file for backward compatibility (first file)
+        params['input_file'] = self.selected_files[0] if self.selected_files else ''
         
+        output_dir = self.output_dir_edit.text().strip()
+        params['output_dir'] = output_dir
+
         if self.parameter_panel:
             try:
                 params['charge'] = int(self.parameter_panel.get_current_charge())
@@ -243,7 +408,7 @@ class FilePanel(QWidget):
         else:
             params['charge'] = 0
             params['multiplicity'] = 1
-            
+
         if self.parameter_panel:
             params['job_type'] = self.parameter_panel.get_current_job_type()
             params['solvent_model'] = self.parameter_panel.get_current_solvent_model()
@@ -252,6 +417,7 @@ class FilePanel(QWidget):
             params['job_type'] = 'Geometry Optimization'
             params['solvent_model'] = 'None'
             params['solvent'] = 'None'
+            
         if params['solvent_model'] != 'None' and params['solvent'] != 'None':
             solvent_blocks = {
                 'orca': {
@@ -270,6 +436,7 @@ class FilePanel(QWidget):
             params["solvent_block"] = solvent_blocks.get(params['software'], {}).get(params['solvent_model'], '')
         else:
             params["solvent_block"] = ''
+            
         job_types = {
             'Single Point': '',
             'Geometry Optimization': 'opt',
@@ -277,54 +444,12 @@ class FilePanel(QWidget):
             'Opt+Freq': 'opt freq',
         }
         params["keywords"] = job_types.get(params['job_type'], "")
-        params['molecule_name'] = os.path.splitext(os.path.basename(input_file))[0] if input_file else 'input'
+        
+        # Set molecule_name to first file for general use
+        first_file = params['input_files'][0] if params['input_files'] else 'input'
+        params['molecule_name'] = os.path.splitext(os.path.basename(first_file))[0]
+        
         return params
-
-    def get_filename(self):
-        initial_filter = FILE_FILTERS[0]
-        filters = ';;'.join(FILE_FILTERS)
-        filename, selected_filter = QFileDialog.getOpenFileName(
-            self,
-            filter=filters,
-            selectedFilter=initial_filter
-        )
-        if filename:
-            self.input_file_edit.setText(filename)
-            self.display_file_info(filename)
-            
-            self.fileSelected.emit(filename)
-
-    def display_file_info(self, filename):
-        try:
-            file_basename = os.path.basename(filename)
-            file_size = os.path.getsize(filename)
-            file_ext = os.path.splitext(filename)[1].lower()
-            status_text = f"Selected file: {file_basename}\n"
-            status_text += f"Full path: {filename}\n"
-            status_text += f"File size: {file_size:,} bytes\n"
-            status_text += f"File type: {file_ext}\n"
-            
-            if file_ext == '.sdf':
-                try:
-                    from rdkit import Chem
-                    supplier = Chem.SDMolSupplier(filename)
-                    mol_count = len([mol for mol in supplier if mol is not None])
-                    status_text += f"Molecules in file: {mol_count}\n"
-                    status_text += "→ Molecules loaded in Molecular Analysis panel\n"
-                except Exception:
-                    status_text += "→ Could not read molecule count\n"
-            
-            status_text += "-" * 50 + "\n"
-            status_text += "Click 'Preview Input' to see what the generated input file will look like,\n"
-            status_text += "or click 'Make Input Files' to create the actual files."
-            
-            if file_ext == '.sdf':
-                status_text += "\n\nFor SDF files: View molecules in the Molecular Analysis panel on the right."
-            
-            self.status_text.setPlainText(status_text)
-        except Exception as e:
-            error_msg = f"Error reading file: {os.path.basename(filename)}\nError: {str(e)}"
-            self.status_text.setPlainText(error_msg)
 
     def get_output_directory(self):
         directory = QFileDialog.getExistingDirectory(
@@ -356,58 +481,107 @@ class FilePanel(QWidget):
 
     def generate_slurm_script(self):
         params = self.collect_input_params()
-        input_file = params.get('input_file', '').strip()
+        input_files = params.get('input_files', [])
         nprocs = params.get('nprocs', 1)
         software = params.get('software', 'orca').lower()
-        if not input_file or not os.path.isfile(input_file):
-            self.status_text.setPlainText("Error: No valid input file selected for SLURM script generation.")
+        
+        if not input_files:
+            self.status_text.setPlainText("Error: No input files selected for SLURM script generation.")
             return
-        input_basename = os.path.basename(input_file)
-        base_name = os.path.splitext(input_basename)[0]
+
         output_dir = params.get('output_dir', '').strip()
         if output_dir:
             script_dir = output_dir
         else:
-            script_dir = os.path.dirname(input_file)
+            script_dir = os.path.dirname(input_files[0])
+
         if software == 'gaussian':
-            script_filename = "submitgaussian.txt"
+            script_filename = "submitgaussian_batch.txt"
         else:
-            script_filename = "submitorca.txt"
+            script_filename = "submitorca_batch.txt"
         script_path = os.path.join(script_dir, script_filename)
+
+        # Generate batch script for multiple files
         if software == 'gaussian':
-            inp_basename = base_name + '.inp'
-            out_basename = base_name + '.inp'
             script_content = f'''#!/bin/bash --login
 #SBATCH -p multicore # (or --partition) Single-node multicore
 #SBATCH -n {nprocs} # (or --ntasks=) Number of cores (2--40)
 #SBATCH -t 4-0
+#SBATCH --array=1-{len(input_files)}
+
 # Load g16 for the CPU type our job is running on
 module load gaussian/g16c01_em64t_detectcpu
+
 ## Set up scratch dir (please do this!)
-export GAUSS_SCRDIR=/scratch/$USER/gau_temp_$SLURM_JOB_ID
+export GAUSS_SCRDIR=/scratch/$USER/gau_temp_${{SLURM_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}
 mkdir -p $GAUSS_SCRDIR
+
 ## Say how much memory to use (4GB per core)
 export GAUSS_MDEF=$((SLURM_NTASKS*4))GB
+
 ## Inform Gaussian how many cores to use
 export GAUSS_PDEF=$SLURM_NTASKS
-$g16root/g16/g16 < {inp_basename} > {out_basename}
+
+# Define input files array
+input_files=(
+'''
+            for filename in input_files:
+                base_name = os.path.splitext(os.path.basename(filename))[0]
+                inp_basename = base_name + '.inp'
+                script_content += f'    "{inp_basename}"\n'
+            
+            script_content += ''')
+
+# Get current file based on array index
+current_input="${input_files[$SLURM_ARRAY_TASK_ID-1]}"
+current_output="${current_input%.*}.out"
+
+$g16root/g16/g16 < "$current_input" > "$current_output"
 '''
         else:
-            inp_basename = base_name + '.inp'
             script_content = f'''#!/bin/bash --login
 
 #SBATCH -p multicore    # (or --partition=) Submit to the AMD Genoa nodes
 #SBATCH -n {nprocs}            # (or --ntasks=) Number of cores (2--168). Must match the number in your ORCA input file!
 #SBATCH -t 4-0          # Wallclock timelimit (4-0 is 4 days, max permitted is 7-0)
+#SBATCH --array=1-{len(input_files)}
 
 module purge
 module load apps/binapps/orca/6.0.1-avx2
 
-$ORCA_HOME/orca {inp_basename}  > results.${{SLURM_JOB_ID}}.txt
+# Define input files array
+input_files=(
 '''
+            for filename in input_files:
+                base_name = os.path.splitext(os.path.basename(filename))[0]
+                inp_basename = base_name + '.inp'
+                script_content += f'    "{inp_basename}"\n'
+            
+            script_content += ''')
+
+# Get current file based on array index
+current_input="${input_files[$SLURM_ARRAY_TASK_ID-1]}"
+
+$ORCA_HOME/orca "$current_input" > results.${{SLURM_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}.txt
+'''
+
         try:
             with open(script_path, 'w') as f:
                 f.write(script_content)
-            self.status_text.setPlainText(f"SLURM script generated: {script_path}")
+            self.status_text.setPlainText(
+                f"SLURM batch script generated: {script_path}\n"
+                f"This script will process {len(input_files)} files using job arrays.\n"
+                f"Submit with: sbatch {script_filename}")
         except Exception as e:
             self.status_text.setPlainText(f"Error writing SLURM script: {str(e)}")
+
+    # Keep original methods for backward compatibility
+    def get_filename(self):
+        """Backward compatibility method"""
+        self.get_single_filename()
+
+    def display_file_info(self, filename):
+        """Backward compatibility method"""
+        self.selected_files = [filename]
+        self.update_file_list()
+        self.display_files_info()
