@@ -1,13 +1,4 @@
-# summerproj
+# Easychem
 
-MOLECULARVIEWER Still does not work on windows 
+EasyChem is a user-friendly desktop application built with PySide6 that simplifies the preparation of computational chemistry calculations for both ORCA and Gaussian software packages. Users can load molecular files for interactive 3D visualization and generate input files with a wide range of calculation methods supported by both software packages. The application enables batch processing of multiple files and provides preview/editing capabilities for generated input files. EasyChem aims to cut down the time spent creating input files and allows for a smoother overall computational chemistry workflow.
 
-
->[!Important] 
->Possible things to do:
-
-- [X] Ability to upload multiple files at once and treat them all at once
-- [ ] Amend the methodology section for both Orca and Gaussian to include more (.xand more relevant) methods
-- [X] Find a way to work with XYZ files (and many of them at once)
-- [ ] Add unit tests (I hear every software endeavour has them idk we're both amateurs here)
-- [ ] *For dealing with multiple files later on* there needs to be a way to automatically assign mult/charge and not impose it to all mols at once
